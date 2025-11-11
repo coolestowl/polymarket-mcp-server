@@ -13,6 +13,7 @@ Provides 10 tools for analyzing markets:
 - analyze_market_opportunity: AI-powered analysis
 - compare_markets: Compare multiple markets
 """
+import json
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta

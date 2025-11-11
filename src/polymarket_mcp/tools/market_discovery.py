@@ -11,6 +11,7 @@ Provides 8 tools for discovering and filtering markets:
 - get_sports_markets: Sports betting markets
 - get_crypto_markets: Cryptocurrency markets
 """
+import json
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
