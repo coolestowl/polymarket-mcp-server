@@ -158,14 +158,14 @@ class PolymarketClient:
         Fetch markets from Polymarket.
 
         Args:
-            next_cursor: Pagination cursor
+            next_cursor: Pagination cursor (passed to CLOB client)
             limit: Number of markets to fetch (max 100)
 
         Returns:
             Dictionary with markets data
         """
         try:
-            # Use simplified markets endpoint
+            # Note: CLOB client's get_markets still uses next_cursor internally
             markets = self.client.get_markets(next_cursor=next_cursor)
             return markets
 

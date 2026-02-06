@@ -311,10 +311,10 @@ class TestMarketAnalysis:
                 token_id = tokens[0].get("token_id")
 
                 if token_id:
-                    # This will return a note about limited availability
+                    # Fetch price history from CLOB /prices-history
                     history = await market_analysis.get_price_history(
                         token_id=token_id,
-                        resolution="1h"
+                        interval="1d"
                     )
 
                     assert isinstance(history, list)

@@ -137,12 +137,12 @@ class TestPositionTools:
             url="https://data-api.polymarket.com/positions",
             json=[
                 {
-                    'asset_id': 'token_123',
-                    'market': 'market_123',
-                    'market_question': 'Will this test pass?',
+                    'asset': 'token_123',
+                    'conditionId': 'market_123',
+                    'title': 'Will this test pass?',
                     'outcome': 'Yes',
                     'size': '100',
-                    'average_price': '0.50'
+                    'avgPrice': '0.50'
                 }
             ]
         )
@@ -185,12 +185,12 @@ class TestPositionTools:
             url="https://data-api.polymarket.com/positions",
             json=[
                 {
-                    'asset_id': 'token_123',
-                    'market': 'market_123',
-                    'market_question': 'Will this test pass?',
+                    'asset': 'token_123',
+                    'conditionId': 'market_123',
+                    'title': 'Will this test pass?',
                     'outcome': 'Yes',
                     'size': '100',
-                    'average_price': '0.50'
+                    'avgPrice': '0.50'
                 }
             ]
         )
@@ -226,12 +226,12 @@ class TestPositionTools:
             url="https://data-api.polymarket.com/positions",
             json=[
                 {
-                    'asset_id': 'token_123',
-                    'market': 'market_123',
-                    'market_question': 'Test Market',
+                    'asset': 'token_123',
+                    'conditionId': 'market_123',
+                    'title': 'Test Market',
                     'outcome': 'Yes',
                     'size': '100',
-                    'average_price': '0.50'
+                    'avgPrice': '0.50'
                 }
             ]
         )
@@ -256,7 +256,7 @@ class TestPositionTools:
             json=[
                 {
                     'id': 'trade_1',
-                    'market': 'market_123',
+                    'conditionId': 'market_123',
                     'outcome': 'Yes',
                     'timestamp': str(int(datetime.now().timestamp())),
                     'side': 'BUY',
@@ -265,7 +265,7 @@ class TestPositionTools:
                 },
                 {
                     'id': 'trade_2',
-                    'market': 'market_123',
+                    'conditionId': 'market_123',
                     'outcome': 'Yes',
                     'timestamp': str(int(datetime.now().timestamp())),
                     'side': 'SELL',
@@ -302,14 +302,13 @@ class TestActivityTools:
             url="https://data-api.polymarket.com/trades",
             json=[
                 {
-                    'id': 'trade_1',
+                    'transactionHash': '0xabc123',
                     'timestamp': str(int(datetime.now().timestamp())),
-                    'market_question': 'Test Market',
+                    'title': 'Test Market',
                     'outcome': 'Yes',
                     'side': 'BUY',
                     'price': '0.50',
-                    'size': '100',
-                    'fee': '0.01'
+                    'size': '100'
                 }
             ]
         )
@@ -334,10 +333,10 @@ class TestActivityTools:
                 {
                     'type': 'TRADE',
                     'timestamp': str(int(datetime.now().timestamp())),
-                    'market_question': 'Test Market',
-                    'amount': '100',
-                    'value': '50',
-                    'transaction_hash': '0x1234567890abcdef'
+                    'title': 'Test Market',
+                    'size': '100',
+                    'usdcSize': '50',
+                    'transactionHash': '0x1234567890abcdef'
                 }
             ]
         )
@@ -346,7 +345,7 @@ class TestActivityTools:
             mock_polymarket_client,
             mock_rate_limiter,
             mock_config,
-            activity_type='trades'
+            activity_type='TRADE'
         )
 
         assert len(result) == 1
@@ -363,20 +362,20 @@ class TestAnalysisTools:
             url="https://data-api.polymarket.com/positions",
             json=[
                 {
-                    'asset_id': 'token_123',
-                    'market': 'market_123',
-                    'market_question': 'Test Market 1',
+                    'asset': 'token_123',
+                    'conditionId': 'market_123',
+                    'title': 'Test Market 1',
                     'outcome': 'Yes',
                     'size': '100',
-                    'average_price': '0.50'
+                    'avgPrice': '0.50'
                 },
                 {
-                    'asset_id': 'token_456',
-                    'market': 'market_456',
-                    'market_question': 'Test Market 2',
+                    'asset': 'token_456',
+                    'conditionId': 'market_456',
+                    'title': 'Test Market 2',
                     'outcome': 'No',
                     'size': '50',
-                    'average_price': '0.60'
+                    'avgPrice': '0.60'
                 }
             ]
         )
@@ -398,12 +397,12 @@ class TestAnalysisTools:
             url="https://data-api.polymarket.com/positions",
             json=[
                 {
-                    'asset_id': 'token_123',
-                    'market': 'market_123',
-                    'market_question': 'Test Market',
+                    'asset': 'token_123',
+                    'conditionId': 'market_123',
+                    'title': 'Test Market',
                     'outcome': 'Yes',
                     'size': '100',
-                    'average_price': '0.30'
+                    'avgPrice': '0.30'
                 }
             ]
         )

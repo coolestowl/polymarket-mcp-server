@@ -110,17 +110,17 @@ async def get_all_positions(
         # Filter positions
         filtered_positions = []
         for pos in positions_data:
-            # Parse position data
+            # Parse position data (API field names: avgPrice, asset, conditionId, title)
             size = float(pos.get('size', 0))
-            avg_price = float(pos.get('average_price', 0))
+            avg_price = float(pos.get('avgPrice', 0))
 
             # Skip zero or very small positions
             if size <= 0:
                 continue
 
             # Get current market price
-            token_id = pos.get('asset_id')
-            market = pos.get('market')
+            token_id = pos.get('asset')
+            market = pos.get('conditionId')
 
             # Fetch current price from orderbook
             try:
@@ -149,7 +149,7 @@ async def get_all_positions(
 
             filtered_positions.append({
                 'market_id': market,
-                'market_question': pos.get('market_question', 'Unknown'),
+                'market_question': pos.get('title', 'Unknown'),
                 'token_id': token_id,
                 'outcome': pos.get('outcome', 'Unknown'),
                 'size': size,
@@ -259,7 +259,7 @@ async def get_position_details(
             )]
 
         position = positions[0]
-        token_id = position.get('asset_id')
+        token_id = position.get('asset')
 
         # Fetch market details
         await rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
@@ -286,7 +286,7 @@ async def get_position_details(
 
         # Calculate position metrics
         size = float(position.get('size', 0))
-        avg_price = float(position.get('average_price', 0))
+        avg_price = float(position.get('avgPrice', 0))
 
         # Current market prices
         bids = orderbook.get('bids', [])
@@ -327,7 +327,7 @@ async def get_position_details(
 
         # Format output
         output_lines = [
-            f"Position Details: {position.get('market_question', 'Unknown')}",
+            f"Position Details: {position.get('title', 'Unknown')}",
             "=" * 80,
             "",
             "POSITION OVERVIEW",
@@ -447,8 +447,8 @@ async def get_portfolio_value(
             if size <= 0:
                 continue
 
-            token_id = pos.get('asset_id')
-            market_id = pos.get('market')
+            token_id = pos.get('asset')
+            market_id = pos.get('conditionId')
 
             # Get current price
             try:
@@ -456,10 +456,10 @@ async def get_portfolio_value(
                 orderbook = await polymarket_client.get_orderbook(token_id)
                 best_bid = float(orderbook.get('bids', [{}])[0].get('price', 0)) if orderbook.get('bids') else 0
                 best_ask = float(orderbook.get('asks', [{}])[0].get('price', 0)) if orderbook.get('asks') else 0
-                mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else float(pos.get('average_price', 0))
+                mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else float(pos.get('avgPrice', 0))
             except Exception as e:
                 logger.warning(f"Failed to fetch price for {token_id}: {e}")
-                mid_price = float(pos.get('average_price', 0))
+                mid_price = float(pos.get('avgPrice', 0))
 
             value = size * mid_price
             position_value += value
@@ -566,15 +566,13 @@ async def get_pnl_summary(
 
         start_time = None if timeframe == 'all' else int((now - timeframe_map[timeframe]).timestamp())
 
-        # Fetch trades
+        # Fetch trades (Data API /trades does not support time filtering)
         await rate_limiter.acquire(EndpointCategory.DATA_API)
         async with httpx.AsyncClient() as client:
-            params = {
+            params: Dict[str, Any] = {
                 "user": config.POLYGON_ADDRESS.lower(),
                 "limit": 500
             }
-            if start_time:
-                params['start_time'] = start_time
 
             response = await client.get(
                 "https://data-api.polymarket.com/trades",
@@ -583,6 +581,13 @@ async def get_pnl_summary(
             )
             response.raise_for_status()
             trades = response.json()
+
+        # Filter by time client-side if needed
+        if start_time:
+            trades = [
+                t for t in trades
+                if int(t.get('timestamp', 0)) >= start_time
+            ]
 
         # Fetch current positions for unrealized P&L
         await rate_limiter.acquire(EndpointCategory.DATA_API)
@@ -599,7 +604,7 @@ async def get_pnl_summary(
         # Group trades by market and outcome to match buys with sells
         market_trades = defaultdict(lambda: defaultdict(list))
         for trade in trades:
-            market_id = trade.get('market')
+            market_id = trade.get('conditionId')
             outcome = trade.get('outcome')
             market_trades[market_id][outcome].append(trade)
 
@@ -659,8 +664,8 @@ async def get_pnl_summary(
             if size <= 0:
                 continue
 
-            avg_price = float(pos.get('average_price', 0))
-            token_id = pos.get('asset_id')
+            avg_price = float(pos.get('avgPrice', 0))
+            token_id = pos.get('asset')
 
             # Get current price
             try:
@@ -679,14 +684,14 @@ async def get_pnl_summary(
             # Track best/worst
             if best_performer is None or pnl > best_performer['pnl']:
                 best_performer = {
-                    'question': pos.get('market_question', 'Unknown'),
+                    'question': pos.get('title', 'Unknown'),
                     'outcome': pos.get('outcome', 'Unknown'),
                     'pnl': pnl
                 }
 
             if worst_performer is None or pnl < worst_performer['pnl']:
                 worst_performer = {
-                    'question': pos.get('market_question', 'Unknown'),
+                    'question': pos.get('title', 'Unknown'),
                     'outcome': pos.get('outcome', 'Unknown'),
                     'pnl': pnl
                 }
@@ -780,22 +785,18 @@ async def get_trade_history(
     try:
         from ..utils.rate_limiter import EndpointCategory
 
-        # Build query parameters
-        params = {
+        # Build query parameters (/trades supports: user, market, eventId,
+        # limit, offset, takerOnly, filterType, filterAmount, side)
+        params: Dict[str, Any] = {
             "user": config.POLYGON_ADDRESS.lower(),
-            "limit": min(limit, 500)
+            "limit": min(limit, 10000)
         }
 
         if market_id:
             params['market'] = market_id
 
-        if start_date:
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            params['start_time'] = int(start_dt.timestamp())
-
-        if end_date:
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            params['end_time'] = int(end_dt.timestamp())
+        if side != 'BOTH':
+            params['side'] = side
 
         # Fetch trades
         await rate_limiter.acquire(EndpointCategory.DATA_API)
@@ -808,9 +809,16 @@ async def get_trade_history(
             response.raise_for_status()
             trades = response.json()
 
-        # Filter by side
-        if side != 'BOTH':
-            trades = [t for t in trades if t.get('side', '').upper() == side.upper()]
+        # Filter by date client-side (API does not support time range filtering)
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            start_ts = int(start_dt.timestamp())
+            trades = [t for t in trades if int(t.get('timestamp', 0)) >= start_ts]
+
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            end_ts = int(end_dt.timestamp())
+            trades = [t for t in trades if int(t.get('timestamp', 0)) <= end_ts]
 
         if not trades:
             return [types.TextContent(
@@ -830,23 +838,22 @@ async def get_trade_history(
         for trade in trades[:limit]:
             timestamp = int(trade.get('timestamp', 0))
             trade_date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            market_question = trade.get('market_question', 'Unknown')
+            market_title = trade.get('title', 'Unknown')
             outcome = trade.get('outcome', 'Unknown')
             trade_side = trade.get('side', 'UNKNOWN')
             price = float(trade.get('price', 0))
             size = float(trade.get('size', 0))
             value = price * size
-            fee = float(trade.get('fee', 0))
 
             total_volume += value
 
             output_lines.extend([
                 f"[{trade_date}] {trade_side}",
-                f"Market: {market_question}",
+                f"Market: {market_title}",
                 f"Outcome: {outcome}",
                 f"Price: ${price:.4f} | Size: {size:.2f} shares",
-                f"Value: ${value:.2f} | Fee: ${fee:.4f}",
-                f"Trade ID: {trade.get('id', 'N/A')}",
+                f"Value: ${value:.2f}",
+                f"Tx: {trade.get('transactionHash', 'N/A')}",
                 ""
             ])
 
@@ -873,7 +880,7 @@ async def get_activity_log(
     polymarket_client,
     rate_limiter,
     config,
-    activity_type: Literal['trades', 'splits', 'merges', 'redeems', 'all'] = 'all',
+    activity_type: Literal['TRADE', 'SPLIT', 'MERGE', 'REDEEM', 'REWARD', 'CONVERSION', 'MAKER_REBATE', 'all'] = 'all',
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: int = 100
@@ -885,7 +892,8 @@ async def get_activity_log(
         polymarket_client: PolymarketClient instance
         rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
-        activity_type: Filter by type - 'trades', 'splits', 'merges', 'redeems', or 'all'
+        activity_type: Filter by type - 'TRADE', 'SPLIT', 'MERGE', 'REDEEM',
+                       'REWARD', 'CONVERSION', 'MAKER_REBATE', or 'all'
         start_date: Start date in ISO format (optional)
         end_date: End date in ISO format (optional)
         limit: Maximum events to return (default: 100)
@@ -896,8 +904,8 @@ async def get_activity_log(
     try:
         from ..utils.rate_limiter import EndpointCategory
 
-        # Build query parameters
-        params = {
+        # Build query parameters (API uses 'start'/'end', not 'start_time'/'end_time')
+        params: Dict[str, Any] = {
             "user": config.POLYGON_ADDRESS.lower(),
             "limit": min(limit, 500)
         }
@@ -907,11 +915,11 @@ async def get_activity_log(
 
         if start_date:
             start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            params['start_time'] = int(start_dt.timestamp())
+            params['start'] = int(start_dt.timestamp())
 
         if end_date:
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            params['end_time'] = int(end_dt.timestamp())
+            params['end'] = int(end_dt.timestamp())
 
         # Fetch activity
         await rate_limiter.acquire(EndpointCategory.DATA_API)
@@ -941,15 +949,15 @@ async def get_activity_log(
             timestamp = int(activity.get('timestamp', 0))
             activity_date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
             event_type = activity.get('type', 'UNKNOWN').upper()
-            market_question = activity.get('market_question', 'N/A')
-            amount = float(activity.get('amount', 0))
-            value = float(activity.get('value', 0))
-            tx_hash = activity.get('transaction_hash', 'N/A')
+            market_title = activity.get('title', 'N/A')
+            size = float(activity.get('size', 0))
+            usdc_size = float(activity.get('usdcSize', 0))
+            tx_hash = activity.get('transactionHash', 'N/A')
 
             output_lines.extend([
                 f"[{activity_date}] {event_type}",
-                f"Market: {market_question}",
-                f"Amount: {amount:.2f} | Value: ${value:.2f}",
+                f"Market: {market_title}",
+                f"Size: {size:.2f} | USDC: ${usdc_size:.2f}",
                 f"Tx Hash: {tx_hash[:10]}...{tx_hash[-8:] if len(tx_hash) > 18 else tx_hash}",
                 ""
             ])
@@ -1017,9 +1025,9 @@ async def analyze_portfolio_risk(
             if size <= 0:
                 continue
 
-            token_id = pos.get('asset_id')
-            market_id = pos.get('market')
-            avg_price = float(pos.get('average_price', 0))
+            token_id = pos.get('asset')
+            market_id = pos.get('conditionId')
+            avg_price = float(pos.get('avgPrice', 0))
 
             # Get current price and liquidity
             try:
@@ -1039,7 +1047,7 @@ async def analyze_portfolio_risk(
 
                 if total_liquidity < 1000:
                     low_liquidity_positions.append({
-                        'question': pos.get('market_question', 'Unknown'),
+                        'question': pos.get('title', 'Unknown'),
                         'outcome': pos.get('outcome', 'Unknown'),
                         'liquidity': total_liquidity
                     })
@@ -1254,8 +1262,8 @@ async def suggest_portfolio_actions(
             if size <= 0:
                 continue
 
-            token_id = pos.get('asset_id')
-            avg_price = float(pos.get('average_price', 0))
+            token_id = pos.get('asset')
+            avg_price = float(pos.get('avgPrice', 0))
 
             # Get current market data
             try:
@@ -1287,9 +1295,9 @@ async def suggest_portfolio_actions(
             total_value += value
 
             position_data.append({
-                'question': pos.get('market_question', 'Unknown'),
+                'question': pos.get('title', 'Unknown'),
                 'outcome': pos.get('outcome', 'Unknown'),
-                'market_id': pos.get('market'),
+                'market_id': pos.get('conditionId'),
                 'value': value,
                 'pnl': pnl,
                 'pnl_pct': pnl_pct,
@@ -1553,7 +1561,7 @@ PORTFOLIO_TOOLS = [
             "properties": {
                 "activity_type": {
                     "type": "string",
-                    "enum": ["trades", "splits", "merges", "redeems", "all"],
+                    "enum": ["TRADE", "SPLIT", "MERGE", "REDEEM", "REWARD", "CONVERSION", "MAKER_REBATE", "all"],
                     "description": "Activity type filter (default: all)",
                     "default": "all"
                 },

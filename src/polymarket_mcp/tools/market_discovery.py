@@ -69,10 +69,10 @@ async def _fetch_gamma_markets(
             if isinstance(data, list):
                 return data[:limit] if limit else data
             elif isinstance(data, dict):
-                # Some endpoints return {data: [...], next_cursor: ...}
+                # Some endpoints return nested data
                 if "data" in data:
                     return data["data"][:limit] if limit else data["data"]
-                # Others return the market directly
+                # Single object response (e.g., single market or event)
                 return [data]
 
             return []
@@ -102,16 +102,35 @@ async def search_markets(
         List of markets matching the query
     """
     try:
-        # Fetch markets with search
-        params = {"query": query}
+        # Use /public-search endpoint with 'q' parameter
+        params: Dict[str, Any] = {"q": query, "limit_per_type": limit}
 
         if filters:
-            params.update(filters)
+            if "active" in filters:
+                params["events_status"] = "active" if filters["active"] == "true" else "closed"
+            if "closed" in filters:
+                params["keep_closed_markets"] = 1 if filters["closed"] == "true" else 0
+            if "tag" in filters:
+                params["events_tag"] = filters["tag"]
 
-        markets = await _fetch_gamma_markets("/markets", params, limit)
+        rate_limiter = get_rate_limiter()
+        await rate_limiter.acquire(EndpointCategory.GAMMA_API)
 
-        logger.info(f"Found {len(markets)} markets for query: {query}")
-        return markets
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            url = f"{GAMMA_API_URL}/public-search"
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        # Extract markets from search results (nested under events)
+        markets = []
+        for event in data.get("events", []):
+            for market in event.get("markets", []):
+                markets.append(market)
+
+        result = markets[:limit]
+        logger.info(f"Found {len(result)} markets for query: {query}")
+        return result
 
     except Exception as e:
         logger.error(f"Failed to search markets: {e}")
@@ -133,8 +152,8 @@ async def get_trending_markets(
         Top markets by volume in the specified timeframe
     """
     try:
-        # Fetch all active markets
-        markets = await _fetch_gamma_markets("/markets", {"active": "true"}, limit=100)
+        # Fetch all active (non-closed) markets
+        markets = await _fetch_gamma_markets("/markets", {"closed": "false"}, limit=100)
 
         # Sort by volume based on timeframe
         volume_key_map = {
@@ -179,10 +198,10 @@ async def filter_markets_by_category(
         Markets in the specified category
     """
     try:
-        params = {"tag": category}
+        params: Dict[str, Any] = {"tag_slug": category}
 
         if active_only:
-            params["active"] = "true"
+            params["closed"] = "false"
 
         markets = await _fetch_gamma_markets("/markets", params, limit)
 
@@ -214,7 +233,7 @@ async def get_event_markets(
 
         # First, get the event details
         if event_slug:
-            event_data = await _fetch_gamma_markets(f"/events/{event_slug}")
+            event_data = await _fetch_gamma_markets(f"/events/slug/{event_slug}")
         else:
             event_data = await _fetch_gamma_markets(f"/events/{event_id}")
 
@@ -245,17 +264,24 @@ async def get_featured_markets(limit: int = 10) -> List[Dict[str, Any]]:
         Featured markets
     """
     try:
-        # Fetch markets with featured flag
-        params = {"featured": "true", "active": "true"}
-        markets = await _fetch_gamma_markets("/markets", params, limit)
+        # Fetch featured events (featured is an events endpoint param)
+        params: Dict[str, Any] = {"featured": "true", "active": "true"}
+        events = await _fetch_gamma_markets("/events", params, limit)
 
-        # If no featured flag exists, return highest volume markets
+        # Extract markets from featured events
+        markets = []
+        for event in events:
+            for market in event.get("markets", []):
+                markets.append(market)
+
+        # If no featured events found, return highest volume markets
         if not markets:
             logger.info("No featured markets found, returning highest volume markets")
             markets = await get_trending_markets("24h", limit)
 
-        logger.info(f"Found {len(markets)} featured markets")
-        return markets
+        result = markets[:limit]
+        logger.info(f"Found {len(result)} featured markets")
+        return result
 
     except Exception as e:
         logger.error(f"Failed to get featured markets: {e}")
@@ -277,37 +303,22 @@ async def get_closing_soon_markets(
         Markets closing soon
     """
     try:
-        # Calculate cutoff time
-        cutoff_time = datetime.utcnow() + timedelta(hours=hours)
-        cutoff_timestamp = int(cutoff_time.timestamp())
+        # Calculate cutoff time as ISO 8601 datetime
+        now = datetime.utcnow()
+        cutoff_time = now + timedelta(hours=hours)
 
-        # Fetch active markets
-        markets = await _fetch_gamma_markets("/markets", {"active": "true"}, limit=100)
+        # Use end_date_min/end_date_max to filter markets closing within timeframe
+        params: Dict[str, Any] = {
+            "closed": "false",
+            "end_date_min": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end_date_max": cutoff_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "order": "endDate",
+            "ascending": "true"
+        }
 
-        # Filter markets closing within timeframe
-        closing_soon = []
-        for market in markets:
-            end_date = market.get("endDate") or market.get("end_date_iso")
-            if end_date:
-                # Parse ISO date or timestamp
-                try:
-                    if isinstance(end_date, str):
-                        end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                    else:
-                        end_dt = datetime.fromtimestamp(int(end_date))
+        markets = await _fetch_gamma_markets("/markets", params, limit)
 
-                    # Check if closing within timeframe
-                    if end_dt <= cutoff_time:
-                        closing_soon.append(market)
-
-                except Exception as parse_error:
-                    logger.warning(f"Failed to parse end_date: {end_date}, error: {parse_error}")
-                    continue
-
-        # Sort by end date (soonest first)
-        closing_soon.sort(key=lambda m: m.get("endDate", m.get("end_date_iso", "")))
-
-        result = closing_soon[:limit]
+        result = markets[:limit]
         logger.info(f"Found {len(result)} markets closing within {hours} hours")
 
         return result
@@ -332,7 +343,7 @@ async def get_sports_markets(
         Sports markets
     """
     try:
-        params = {"tag": "Sports", "active": "true"}
+        params: Dict[str, Any] = {"tag_slug": "sports", "closed": "false"}
 
         markets = await _fetch_gamma_markets("/markets", params, limit=100)
 
@@ -371,7 +382,7 @@ async def get_crypto_markets(
         Crypto-related markets
     """
     try:
-        params = {"tag": "Crypto", "active": "true"}
+        params: Dict[str, Any] = {"tag_slug": "crypto", "closed": "false"}
 
         markets = await _fetch_gamma_markets("/markets", params, limit=100)
 
@@ -418,9 +429,9 @@ def get_tools() -> List[types.Tool]:
                         "type": "object",
                         "description": "Optional filters (active, closed, tags, etc.)",
                         "properties": {
-                            "active": {"type": "string"},
-                            "closed": {"type": "string"},
-                            "tag": {"type": "string"}
+                            "active": {"type": "string", "description": "Filter by active status ('true'/'false')"},
+                            "closed": {"type": "string", "description": "Filter closed markets ('true'/'false')"},
+                            "tag": {"type": "string", "description": "Filter by tag slug"}
                         }
                     }
                 },

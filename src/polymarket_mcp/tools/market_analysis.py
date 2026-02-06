@@ -135,9 +135,9 @@ async def get_market_details(
     try:
         # Determine which identifier to use
         if slug:
-            data = await _fetch_gamma_api(f"/markets/{slug}")
+            data = await _fetch_gamma_api(f"/markets/slug/{slug}")
         elif condition_id:
-            data = await _fetch_gamma_api(f"/markets", {"condition_id": condition_id})
+            data = await _fetch_gamma_api("/markets", {"condition_ids": condition_id})
         elif market_id:
             data = await _fetch_gamma_api(f"/markets/{market_id}")
         else:
@@ -344,43 +344,60 @@ async def get_price_history(
     token_id: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    resolution: str = "1h"
+    interval: str = "1h",
+    fidelity: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
-    Get historical price data.
+    Get historical price data from CLOB /prices-history endpoint.
 
     Args:
-        token_id: Token ID
-        start_date: Start date (ISO format or timestamp)
-        end_date: End date (ISO format or timestamp)
-        resolution: Time resolution ('1m', '5m', '1h', '1d')
+        token_id: CLOB token ID
+        start_date: Start date (ISO format or unix timestamp)
+        end_date: End date (ISO format or unix timestamp)
+        interval: Duration string ('1m', '1h', '6h', '1d', '1w', 'max').
+                  Mutually exclusive with start_date/end_date.
+        fidelity: Data resolution in minutes (e.g., 60 for hourly)
 
     Returns:
-        OHLC price data
+        Price history data with timestamps and prices
     """
     try:
-        # Calculate default date range if not provided
-        if not end_date:
-            end_date = datetime.utcnow().isoformat()
+        params: Dict[str, Any] = {"market": token_id}
 
-        if not start_date:
-            # Default to 7 days ago
-            start_dt = datetime.utcnow() - timedelta(days=7)
-            start_date = start_dt.isoformat()
+        # If start/end dates are provided, convert to unix timestamps
+        if start_date or end_date:
+            if start_date:
+                if isinstance(start_date, str) and not start_date.isdigit():
+                    start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                    params["startTs"] = int(start_dt.timestamp())
+                else:
+                    params["startTs"] = int(start_date)
 
-        # Note: Polymarket doesn't have a public historical price API
-        # This would need to be implemented with a data provider or by storing prices
-        # For now, return a placeholder response
+            if end_date:
+                if isinstance(end_date, str) and not end_date.isdigit():
+                    end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                    params["endTs"] = int(end_dt.timestamp())
+                else:
+                    params["endTs"] = int(end_date)
+        else:
+            # Use interval if no explicit date range
+            params["interval"] = interval
 
-        logger.warning(
-            "Historical price data not available via public API. "
-            "Consider using a third-party data provider."
-        )
+        if fidelity is not None:
+            params["fidelity"] = fidelity
 
-        return [{
-            "error": "Historical price data not available via public Polymarket API",
-            "suggestion": "Use real-time price tracking or third-party data providers"
-        }]
+        data = await _fetch_clob_api("/prices-history", params)
+
+        # Response format: {"history": [{"t": timestamp, "p": price}, ...]}
+        history = data.get("history", [])
+
+        result = [
+            {"timestamp": entry["t"], "price": entry["p"]}
+            for entry in history
+        ]
+
+        logger.info(f"Price history for {token_id}: {len(result)} data points")
+        return result
 
     except Exception as e:
         logger.error(f"Failed to get price history: {e}")
@@ -707,27 +724,31 @@ def get_tools() -> List[types.Tool]:
         ),
         types.Tool(
             name="get_price_history",
-            description="Get historical price data (OHLC). Note: Limited availability via public API.",
+            description="Get historical price data from CLOB API. Use interval for relative time ranges, or start_date/end_date for absolute ranges.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "token_id": {
                         "type": "string",
-                        "description": "Token ID"
+                        "description": "CLOB token ID"
                     },
                     "start_date": {
                         "type": "string",
-                        "description": "Start date (ISO format or timestamp)"
+                        "description": "Start date (ISO format or unix timestamp). Mutually exclusive with interval."
                     },
                     "end_date": {
                         "type": "string",
-                        "description": "End date (ISO format or timestamp)"
+                        "description": "End date (ISO format or unix timestamp). Mutually exclusive with interval."
                     },
-                    "resolution": {
+                    "interval": {
                         "type": "string",
-                        "enum": ["1m", "5m", "1h", "1d"],
-                        "description": "Time resolution (default: 1h)",
+                        "enum": ["1m", "1h", "6h", "1d", "1w", "max"],
+                        "description": "Duration string (default: 1h). Mutually exclusive with start_date/end_date.",
                         "default": "1h"
+                    },
+                    "fidelity": {
+                        "type": "integer",
+                        "description": "Data resolution in minutes (e.g., 60 for hourly)"
                     }
                 },
                 "required": ["token_id"]
