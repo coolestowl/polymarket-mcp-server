@@ -129,8 +129,8 @@ class PolymarketClient:
         try:
             logger.info("Creating API credentials...")
 
-            # Use the client's built-in method to create credentials
-            creds = self.client.create_api_key()
+            # Use the client's built-in method to create or derive credentials
+            creds = self.client.create_or_derive_api_creds(nonce=0)
 
             # Store credentials
             self.api_creds = ApiCreds(
