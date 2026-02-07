@@ -53,7 +53,9 @@ class TradingTools:
         price: float,
         size: float,
         order_type: str = "GTC",
-        expiration: Optional[int] = None
+        expiration: Optional[int] = None,
+        token_id: Optional[str] = None,
+        outcome: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a limit order on Polymarket.
@@ -65,6 +67,8 @@ class TradingTools:
             size: Order size in USD
             order_type: 'GTC'|'GTD'|'FOK'|'FAK' (default 'GTC')
             expiration: Unix timestamp for GTD orders (optional)
+            token_id: Specific token ID to trade (optional, for multi-outcome markets)
+            outcome: Outcome name/index for multi-outcome markets (optional, alternative to token_id)
 
         Returns:
             Dict with order ID, status, and details
@@ -98,13 +102,18 @@ class TradingTools:
             logger.info(f"Fetching market data for {market_id}")
             market = await self.client.get_market(market_id)
 
-            # Get token ID (YES token for BUY, NO token for SELL on yes side typically)
-            # For simplicity, use first token. In production, implement proper token selection
+            # Get token ID with proper selection for binary and multi-outcome markets
             tokens = market.get('tokens', [])
             if not tokens:
                 raise ValueError(f"No tokens found for market {market_id}")
 
-            token_id = tokens[0]['token_id']
+            # If token_id not explicitly provided, select based on market type and outcome
+            if not token_id:
+                token_id = self._select_token_id(tokens, side, outcome)
+
+            # Validate token_id exists in market
+            if not any(t.get('token_id') == token_id for t in tokens):
+                raise ValueError(f"Token ID {token_id} not found in market {market_id}")
 
             # Get orderbook for validation
             orderbook = await self.client.get_orderbook(token_id)
@@ -220,7 +229,9 @@ class TradingTools:
         self,
         market_id: str,
         side: str,
-        size: float
+        size: float,
+        token_id: Optional[str] = None,
+        outcome: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute market order at best available price (FOK).
@@ -229,6 +240,8 @@ class TradingTools:
             market_id: Market condition ID
             side: 'BUY' or 'SELL'
             size: Order size in USD
+            token_id: Specific token ID to trade (optional)
+            outcome: Outcome name/index for multi-outcome markets (optional)
 
         Returns:
             Dict with execution details
@@ -240,7 +253,9 @@ class TradingTools:
             if not tokens:
                 raise ValueError(f"No tokens found for market {market_id}")
 
-            token_id = tokens[0]['token_id']
+            # Select token ID if not provided
+            if not token_id:
+                token_id = self._select_token_id(tokens, side, outcome)
 
             # Get best price from orderbook
             orderbook = await self.client.get_orderbook(token_id)
@@ -373,7 +388,9 @@ class TradingTools:
         market_id: str,
         side: str,
         size: float,
-        strategy: str = 'mid'
+        strategy: str = 'mid',
+        token_id: Optional[str] = None,
+        outcome: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         AI suggests optimal price for order.
@@ -383,6 +400,8 @@ class TradingTools:
             side: 'BUY' or 'SELL'
             size: Order size in USD
             strategy: 'aggressive'|'passive'|'mid'
+            token_id: Specific token ID (optional)
+            outcome: Outcome for multi-outcome markets (optional)
 
         Returns:
             Dict with suggested price and reasoning
@@ -396,7 +415,10 @@ class TradingTools:
             if not tokens:
                 raise ValueError(f"No tokens found for market {market_id}")
 
-            token_id = tokens[0]['token_id']
+            # Select token ID if not provided
+            if not token_id:
+                token_id = self._select_token_id(tokens, side, outcome)
+
             orderbook = await self.client.get_orderbook(token_id)
 
             # Parse orderbook
@@ -928,7 +950,9 @@ class TradingTools:
         self,
         market_id: str,
         target_size: Optional[float] = None,
-        max_slippage: float = 0.02
+        max_slippage: float = 0.02,
+        token_id: Optional[str] = None,
+        outcome: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Adjust position to target size (or close if target_size is None).
@@ -937,6 +961,8 @@ class TradingTools:
             market_id: Market condition ID
             target_size: Target position size in USD (None to close)
             max_slippage: Maximum acceptable slippage (default 2%)
+            token_id: Specific token ID (optional)
+            outcome: Outcome for multi-outcome markets (optional)
 
         Returns:
             Dict with rebalance summary
@@ -986,7 +1012,10 @@ class TradingTools:
             if not tokens:
                 raise ValueError(f"No tokens found for market {market_id}")
 
-            token_id = tokens[0]['token_id']
+            # Select token ID if not provided
+            if not token_id:
+                token_id = self._select_token_id(tokens, side, outcome)
+
             orderbook = await self.client.get_orderbook(token_id)
 
             bids = orderbook.get('bids', [])
@@ -1051,6 +1080,95 @@ class TradingTools:
 
     # ========== HELPER METHODS ==========
 
+    def _select_token_id(
+        self,
+        tokens: List[Dict[str, Any]],
+        side: str,
+        outcome: Optional[str] = None
+    ) -> str:
+        """
+        Select appropriate token ID based on market type and trading intent.
+
+        Supports:
+        - Binary markets (YES/NO): Automatically selects based on side
+        - Multi-outcome markets: Selects based on outcome parameter or first token
+
+        Args:
+            tokens: List of token dictionaries from market data
+            side: 'BUY' or 'SELL'
+            outcome: Optional outcome identifier (name, index, or token_id)
+
+        Returns:
+            Selected token_id
+
+        Raises:
+            ValueError: If outcome not found in multi-outcome market
+        """
+        side_upper = side.upper()
+
+        # Binary market (2 tokens): YES and NO
+        if len(tokens) == 2:
+            # For binary markets:
+            # - BUY side typically means buying YES (index 0)
+            # - SELL side typically means selling YES (or buying NO)
+            # Token order: [YES, NO] or based on outcome field
+
+            if outcome:
+                # Try to match by outcome name/id
+                for token in tokens:
+                    if (str(outcome).lower() in str(token.get('outcome', '')).lower() or
+                        str(outcome) == token.get('token_id')):
+                        return token['token_id']
+                raise ValueError(f"Outcome '{outcome}' not found in binary market tokens")
+
+            # Default: BUY = YES token (index 0), SELL = NO token (index 1)
+            # This assumes standard binary market structure
+            if side_upper == 'BUY':
+                # For BUY, default to YES outcome (typically index 0)
+                return tokens[0]['token_id']
+            else:
+                # For SELL, default to NO outcome (typically index 1)
+                return tokens[1]['token_id'] if len(tokens) > 1 else tokens[0]['token_id']
+
+        # Multi-outcome market (>2 tokens)
+        elif len(tokens) > 2:
+            if not outcome:
+                raise ValueError(
+                    f"Multi-outcome market with {len(tokens)} outcomes requires 'outcome' parameter. "
+                    f"Available outcomes: {[t.get('outcome', t.get('token_id')) for t in tokens]}"
+                )
+
+            # Try to match outcome by various methods
+            # 1. Try exact token_id match
+            for token in tokens:
+                if outcome == token.get('token_id'):
+                    return token['token_id']
+
+            # 2. Try outcome name match (case-insensitive)
+            outcome_lower = str(outcome).lower()
+            for token in tokens:
+                if outcome_lower in str(token.get('outcome', '')).lower():
+                    return token['token_id']
+
+            # 3. Try index match (0-based)
+            try:
+                outcome_idx = int(outcome)
+                if 0 <= outcome_idx < len(tokens):
+                    return tokens[outcome_idx]['token_id']
+            except (ValueError, TypeError):
+                pass
+
+            # No match found
+            available = [f"{i}: {t.get('outcome', t.get('token_id'))}" for i, t in enumerate(tokens)]
+            raise ValueError(
+                f"Outcome '{outcome}' not found in multi-outcome market. "
+                f"Available: {', '.join(available)}"
+            )
+
+        # Single token market (uncommon)
+        else:
+            return tokens[0]['token_id']
+
     def _convert_positions(
         self,
         positions_data: List[Dict[str, Any]]
@@ -1090,7 +1208,9 @@ def get_tool_definitions() -> List[types.Tool]:
             description=(
                 "Create a limit order on Polymarket. "
                 "Validates order against safety limits before execution. "
-                "Supports GTC, GTD, FOK, and FAK order types."
+                "Supports GTC, GTD, FOK, and FAK order types. "
+                "For binary markets (YES/NO), side determines token automatically. "
+                "For multi-outcome markets, specify 'outcome' parameter."
             ),
             inputSchema={
                 "type": "object",
@@ -1124,6 +1244,14 @@ def get_tool_definitions() -> List[types.Tool]:
                     "expiration": {
                         "type": "integer",
                         "description": "Unix timestamp for GTD orders (optional)"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Specific token ID to trade (optional, for advanced use)"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "Outcome name/index for multi-outcome markets (required for >2 outcomes, e.g., 'Candidate A', '0', '1')"
                     }
                 },
                 "required": ["market_id", "side", "price", "size"]
@@ -1133,7 +1261,8 @@ def get_tool_definitions() -> List[types.Tool]:
             name="create_market_order",
             description=(
                 "Execute market order at best available price using FOK. "
-                "Provides immediate execution at current market price."
+                "Provides immediate execution at current market price. "
+                "For binary markets, side determines token. For multi-outcome markets, specify outcome."
             ),
             inputSchema={
                 "type": "object",
@@ -1151,6 +1280,14 @@ def get_tool_definitions() -> List[types.Tool]:
                         "type": "number",
                         "minimum": 1,
                         "description": "Order size in USD"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Specific token ID to trade (optional)"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "Outcome name/index for multi-outcome markets (optional)"
                     }
                 },
                 "required": ["market_id", "side", "size"]
