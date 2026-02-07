@@ -119,8 +119,10 @@
 │ 8. Post Order to CLOB API                                        │
 │    • Convert size USD to shares (size / price)                  │
 │    • Build OrderArgs with token_id, price, size, side, type     │
-│    • Sign order with private key (L1 auth)                      │
-│    • POST to /order with HMAC signature (L2 auth)               │
+│    • Call client.create_and_post_order(order_args)              │
+│      - Creates order (validates tick size, neg_risk)            │
+│      - Signs order with private key (L1 auth)                   │
+│      - POSTs to /order with HMAC signature (L2 auth)            │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
