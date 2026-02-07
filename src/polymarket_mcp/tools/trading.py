@@ -142,12 +142,12 @@ class TradingTools:
             bids = parsed_orderbook.get('bids', [])
             asks = parsed_orderbook.get('asks', [])
 
-            best_bid = float(bids[0]['price']) if bids else 0.0
-            best_ask = float(asks[0]['price']) if asks else 1.0
+            best_bid = float(bids[0].price) if bids else 0.0
+            best_ask = float(asks[0].price) if asks else 1.0
 
             # Calculate liquidity
-            bid_liquidity = sum(float(b['price']) * float(b['size']) for b in bids[:10])
-            ask_liquidity = sum(float(a['price']) * float(a['size']) for a in asks[:10])
+            bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:10])
+            ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:10])
 
             market_data = MarketData(
                 market_id=market_id,
@@ -287,13 +287,13 @@ class TradingTools:
                 asks = parsed_orderbook.get('asks', [])
                 if not asks:
                     raise ValueError("No asks available in orderbook")
-                best_price = float(asks[0]['price'])
+                best_price = float(asks[0].price)
             else:
                 # Sell at best bid
                 bids = parsed_orderbook.get('bids', [])
                 if not bids:
                     raise ValueError("No bids available in orderbook")
-                best_price = float(bids[0]['price'])
+                best_price = float(bids[0].price)
 
             logger.info(
                 f"Executing market order: {side} ${size} @ market price {best_price}"
@@ -450,8 +450,8 @@ class TradingTools:
             if not bids or not asks:
                 raise ValueError("Insufficient orderbook depth")
 
-            best_bid = float(bids[0]['price'])
-            best_ask = float(asks[0]['price'])
+            best_bid = float(bids[0].price)
+            best_ask = float(asks[0].price)
             mid_price = (best_bid + best_ask) / 2
             spread = best_ask - best_bid
 
@@ -1044,8 +1044,8 @@ class TradingTools:
             bids = parsed_orderbook.get('bids', [])
             asks = parsed_orderbook.get('asks', [])
 
-            best_bid = float(bids[0]['price']) if bids else 0.0
-            best_ask = float(asks[0]['price']) if asks else 1.0
+            best_bid = float(bids[0].price) if bids else 0.0
+            best_ask = float(asks[0].price) if asks else 1.0
             mid_price = (best_bid + best_ask) / 2
 
             # Calculate expected execution price

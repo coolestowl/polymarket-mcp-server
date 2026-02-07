@@ -312,8 +312,8 @@ async def get_position_details(
         parsed_orderbook = _parse_orderbook(orderbook)
         bids = parsed_orderbook.get('bids', [])
         asks = parsed_orderbook.get('asks', [])
-        best_bid = float(bids[0]['price']) if bids else 0
-        best_ask = float(asks[0]['price']) if asks else 0
+        best_bid = float(bids[0].price) if bids else 0
+        best_ask = float(asks[0].price) if asks else 0
         mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
         spread = best_ask - best_bid if (best_bid and best_ask) else 0
 
@@ -339,8 +339,8 @@ async def get_position_details(
             suggestions.append("Market lowly valued - high upside if outcome occurs")
 
         # Liquidity check
-        bid_liquidity = sum(float(b['price']) * float(b['size']) for b in bids[:5]) if bids else 0
-        ask_liquidity = sum(float(a['price']) * float(a['size']) for a in asks[:5]) if asks else 0
+        bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
+        ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
         total_liquidity = bid_liquidity + ask_liquidity
 
         if total_liquidity < 1000:
@@ -1060,13 +1060,13 @@ async def analyze_portfolio_risk(
                 parsed_orderbook = _parse_orderbook(orderbook)
                 bids = parsed_orderbook.get('bids', [])
                 asks = parsed_orderbook.get('asks', [])
-                best_bid = float(bids[0]['price']) if bids else 0
-                best_ask = float(asks[0]['price']) if asks else 0
+                best_bid = float(bids[0].price) if bids else 0
+                best_ask = float(asks[0].price) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
 
                 # Calculate liquidity
-                bid_liquidity = sum(float(b['price']) * float(b['size']) for b in bids[:5]) if bids else 0
-                ask_liquidity = sum(float(a['price']) * float(a['size']) for a in asks[:5]) if asks else 0
+                bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
+                ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
                 total_liquidity = bid_liquidity + ask_liquidity
 
                 if total_liquidity < 1000:
@@ -1297,14 +1297,14 @@ async def suggest_portfolio_actions(
                 parsed_orderbook = _parse_orderbook(orderbook)
                 bids = parsed_orderbook.get('bids', [])
                 asks = parsed_orderbook.get('asks', [])
-                best_bid = float(bids[0]['price']) if bids else 0
-                best_ask = float(asks[0]['price']) if asks else 0
+                best_bid = float(bids[0].price) if bids else 0
+                best_ask = float(asks[0].price) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
                 spread = (best_ask - best_bid) if (best_bid and best_ask) else 0
 
                 # Liquidity
-                bid_liquidity = sum(float(b['price']) * float(b['size']) for b in bids[:5]) if bids else 0
-                ask_liquidity = sum(float(a['price']) * float(a['size']) for a in asks[:5]) if asks else 0
+                bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
+                ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
                 total_liquidity = bid_liquidity + ask_liquidity
             except Exception as e:
                 logger.warning(f"Failed to fetch orderbook for {token_id}: {e}")
