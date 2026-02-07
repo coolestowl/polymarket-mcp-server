@@ -211,7 +211,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 name,
                 arguments,
                 polymarket_client,
-                safety_limits,
+                get_rate_limiter(),
                 config
             )
 

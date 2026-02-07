@@ -9,6 +9,7 @@ Provides tools for:
 
 Reference: https://docs.polymarket.com/developers/CTF/redeem
 """
+import asyncio
 import logging
 import json
 from typing import Dict, Any, List, Optional
@@ -24,6 +25,64 @@ logger = logging.getLogger(__name__)
 
 # Polygon RPC endpoint
 POLYGON_RPC = "https://polygon-rpc.com"
+
+
+async def _fetch_closed_positions(all_positions: List, gamma_client: httpx.AsyncClient) -> List:
+    """
+    Filter positions for closed markets by checking market status.
+    
+    Args:
+        all_positions: List of all positions
+        gamma_client: HTTP client for Gamma API requests
+        
+    Returns:
+        List of positions in closed/resolved markets
+    """
+    positions_data = []
+    
+    # Group positions by market ID for efficiency (O(N))
+    positions_by_market = {}
+    for pos in all_positions:
+        market_id = pos.get('conditionId')
+        if market_id:
+            if market_id not in positions_by_market:
+                positions_by_market[market_id] = []
+            positions_by_market[market_id].append(pos)
+    
+    # Fetch market details to check if closed (concurrent requests)
+    if positions_by_market:
+        # Fetch all markets concurrently
+        async def check_market(market_id):
+            """
+            Check if a market is closed and return its positions.
+            
+            Args:
+                market_id: Market condition ID to check
+                
+            Returns:
+                list: Positions for this market if closed, empty list otherwise
+            """
+            try:
+                market_response = await gamma_client.get(
+                    f"https://gamma-api.polymarket.com/markets/{market_id}",
+                    timeout=10.0
+                )
+                if market_response.status_code == 200:
+                    market = market_response.json()
+                    # Return positions if market is closed
+                    if market.get('closed') or market.get('resolved'):
+                        return positions_by_market[market_id]
+            except Exception as e:
+                logger.warning(f"Failed to fetch market {market_id}: {e}")
+            return []
+        
+        # Run all market checks concurrently
+        results = await asyncio.gather(*[check_market(mid) for mid in positions_by_market.keys()])
+        # Flatten results
+        for result in results:
+            positions_data.extend(result)
+    
+    return positions_data
 
 
 async def get_closed_positions(
@@ -56,13 +115,20 @@ async def get_closed_positions(
                 "user": config.POLYGON_ADDRESS.lower()
             }
 
+            # Get all positions and filter for closed markets
             response = await client.get(
-                "https://data-api.polymarket.com/positions/closed-positions",
+                "https://data-api.polymarket.com/positions",
                 params=params,
                 timeout=10.0
             )
             response.raise_for_status()
-            positions_data = response.json()
+            all_positions = response.json()
+
+        # Filter for closed positions (markets that are resolved/closed)
+        positions_data = []
+        if all_positions:
+            async with httpx.AsyncClient() as gamma_client:
+                positions_data = await _fetch_closed_positions(all_positions, gamma_client)
 
         if not positions_data:
             return [types.TextContent(
@@ -135,13 +201,20 @@ async def get_redeemable_positions(
                 "user": config.POLYGON_ADDRESS.lower()
             }
 
+            # Get all positions and filter for closed markets
             response = await client.get(
-                "https://data-api.polymarket.com/positions/closed-positions",
+                "https://data-api.polymarket.com/positions",
                 params=params,
                 timeout=10.0
             )
             response.raise_for_status()
-            positions_data = response.json()
+            all_positions = response.json()
+
+        # Filter for closed positions (markets that are resolved/closed)
+        positions_data = []
+        if all_positions:
+            async with httpx.AsyncClient() as gamma_client:
+                positions_data = await _fetch_closed_positions(all_positions, gamma_client)
 
         if not positions_data:
             return [types.TextContent(

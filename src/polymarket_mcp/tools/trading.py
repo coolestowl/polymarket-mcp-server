@@ -23,6 +23,25 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_orderbook(orderbook) -> dict:
+    """
+    Parse orderbook data whether it's a dict or SDK object.
+    
+    Args:
+        orderbook: Either a dict or SDK OrderBookSummary object from get_orderbook()
+        
+    Returns:
+        dict: Normalized orderbook dict with 'bids' and 'asks' keys
+    """
+    if isinstance(orderbook, dict):
+        return orderbook
+    # Handle SDK OrderBookSummary object
+    return {
+        'bids': getattr(orderbook, 'bids', []) or [],
+        'asks': getattr(orderbook, 'asks', []) or [],
+    }
+
+
 class TradingTools:
     """
     Trading tools for Polymarket.
@@ -119,8 +138,9 @@ class TradingTools:
             orderbook = await self.client.get_orderbook(token_id)
 
             # Parse orderbook data
-            bids = orderbook.get('bids', [])
-            asks = orderbook.get('asks', [])
+            parsed_orderbook = _parse_orderbook(orderbook)
+            bids = parsed_orderbook.get('bids', [])
+            asks = parsed_orderbook.get('asks', [])
 
             best_bid = float(bids[0]['price']) if bids else 0.0
             best_ask = float(asks[0]['price']) if asks else 1.0
@@ -260,16 +280,17 @@ class TradingTools:
             # Get best price from orderbook
             orderbook = await self.client.get_orderbook(token_id)
 
+            parsed_orderbook = _parse_orderbook(orderbook)
             side_upper = side.upper()
             if side_upper == 'BUY':
                 # Buy at best ask
-                asks = orderbook.get('asks', [])
+                asks = parsed_orderbook.get('asks', [])
                 if not asks:
                     raise ValueError("No asks available in orderbook")
                 best_price = float(asks[0]['price'])
             else:
                 # Sell at best bid
-                bids = orderbook.get('bids', [])
+                bids = parsed_orderbook.get('bids', [])
                 if not bids:
                     raise ValueError("No bids available in orderbook")
                 best_price = float(bids[0]['price'])
@@ -422,8 +443,9 @@ class TradingTools:
             orderbook = await self.client.get_orderbook(token_id)
 
             # Parse orderbook
-            bids = orderbook.get('bids', [])
-            asks = orderbook.get('asks', [])
+            parsed_orderbook = _parse_orderbook(orderbook)
+            bids = parsed_orderbook.get('bids', [])
+            asks = parsed_orderbook.get('asks', [])
 
             if not bids or not asks:
                 raise ValueError("Insufficient orderbook depth")
@@ -1018,8 +1040,9 @@ class TradingTools:
 
             orderbook = await self.client.get_orderbook(token_id)
 
-            bids = orderbook.get('bids', [])
-            asks = orderbook.get('asks', [])
+            parsed_orderbook = _parse_orderbook(orderbook)
+            bids = parsed_orderbook.get('bids', [])
+            asks = parsed_orderbook.get('asks', [])
 
             best_bid = float(bids[0]['price']) if bids else 0.0
             best_ask = float(asks[0]['price']) if asks else 1.0

@@ -20,6 +20,25 @@ import mcp.types as types
 logger = logging.getLogger(__name__)
 
 
+def _parse_orderbook(orderbook) -> dict:
+    """
+    Parse orderbook data whether it's a dict or SDK object.
+    
+    Args:
+        orderbook: Either a dict or SDK OrderBookSummary object from get_orderbook()
+        
+    Returns:
+        dict: Normalized orderbook dict with 'bids' and 'asks' keys
+    """
+    if isinstance(orderbook, dict):
+        return orderbook
+    # Handle SDK OrderBookSummary object
+    return {
+        'bids': getattr(orderbook, 'bids', []) or [],
+        'asks': getattr(orderbook, 'asks', []) or [],
+    }
+
+
 class PortfolioDataCache:
     """Simple cache for portfolio data to reduce API calls"""
     def __init__(self, ttl_seconds: int = 30):
@@ -128,8 +147,9 @@ async def get_all_positions(
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
                 # Calculate mid price
-                best_bid = float(orderbook.get('bids', [{}])[0].get('price', 0)) if orderbook.get('bids') else 0
-                best_ask = float(orderbook.get('asks', [{}])[0].get('price', 0)) if orderbook.get('asks') else 0
+                parsed_orderbook = _parse_orderbook(orderbook)
+                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
+                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
                 current_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
             except Exception as e:
                 logger.warning(f"Failed to fetch current price for {token_id}: {e}")
@@ -289,8 +309,9 @@ async def get_position_details(
         avg_price = float(position.get('avgPrice', 0))
 
         # Current market prices
-        bids = orderbook.get('bids', [])
-        asks = orderbook.get('asks', [])
+        parsed_orderbook = _parse_orderbook(orderbook)
+        bids = parsed_orderbook.get('bids', [])
+        asks = parsed_orderbook.get('asks', [])
         best_bid = float(bids[0]['price']) if bids else 0
         best_ask = float(asks[0]['price']) if asks else 0
         mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
@@ -454,8 +475,9 @@ async def get_portfolio_value(
             try:
                 await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
-                best_bid = float(orderbook.get('bids', [{}])[0].get('price', 0)) if orderbook.get('bids') else 0
-                best_ask = float(orderbook.get('asks', [{}])[0].get('price', 0)) if orderbook.get('asks') else 0
+                parsed_orderbook = _parse_orderbook(orderbook)
+                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
+                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else float(pos.get('avgPrice', 0))
             except Exception as e:
                 logger.warning(f"Failed to fetch price for {token_id}: {e}")
@@ -671,8 +693,9 @@ async def get_pnl_summary(
             try:
                 await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
-                best_bid = float(orderbook.get('bids', [{}])[0].get('price', 0)) if orderbook.get('bids') else 0
-                best_ask = float(orderbook.get('asks', [{}])[0].get('price', 0)) if orderbook.get('asks') else 0
+                parsed_orderbook = _parse_orderbook(orderbook)
+                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
+                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
             except Exception as e:
                 logger.warning(f"Failed to fetch price for {token_id}: {e}")
@@ -1034,8 +1057,9 @@ async def analyze_portfolio_risk(
                 await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
-                bids = orderbook.get('bids', [])
-                asks = orderbook.get('asks', [])
+                parsed_orderbook = _parse_orderbook(orderbook)
+                bids = parsed_orderbook.get('bids', [])
+                asks = parsed_orderbook.get('asks', [])
                 best_bid = float(bids[0]['price']) if bids else 0
                 best_ask = float(asks[0]['price']) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
@@ -1270,8 +1294,9 @@ async def suggest_portfolio_actions(
                 await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
-                bids = orderbook.get('bids', [])
-                asks = orderbook.get('asks', [])
+                parsed_orderbook = _parse_orderbook(orderbook)
+                bids = parsed_orderbook.get('bids', [])
+                asks = parsed_orderbook.get('asks', [])
                 best_bid = float(bids[0]['price']) if bids else 0
                 best_ask = float(asks[0]['price']) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
