@@ -280,8 +280,8 @@ class PolymarketClient:
             if expiration:
                 order_args.expiration = expiration
 
-            # Post order using client
-            order_response = self.client.create_order(order_args)
+            # Post order using client (create_and_post_order creates, signs, and posts the order)
+            order_response = self.client.create_and_post_order(order_args)
 
             logger.info(
                 f"Order posted: {side} {size} @ {price} "
