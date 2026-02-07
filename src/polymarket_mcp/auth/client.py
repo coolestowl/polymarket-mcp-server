@@ -4,6 +4,7 @@ Handles L1 (private key) and L2 (API key) authentication.
 """
 from typing import Dict, Any, List, Optional
 import logging
+import httpx
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
 from py_clob_client.constants import POLYGON
@@ -394,20 +395,41 @@ class PolymarketClient:
 
     async def get_positions(self) -> List[Dict[str, Any]]:
         """
-        Get user's positions.
+        Get user's positions via Polymarket Data API.
 
         Returns:
-            List of positions
+            List of positions with normalized field names
 
         Raises:
-            RuntimeError: If L2 credentials not available
+            RuntimeError: If address not available
         """
-        if not self.api_creds:
-            raise RuntimeError("L2 API credentials required")
+        if not self.address:
+            raise RuntimeError("Polygon address required")
 
         try:
-            positions = self.client.get_positions(self.address)
-            return positions
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.get(
+                    "https://data-api.polymarket.com/positions",
+                    params={"user": self.address.lower()},
+                    timeout=10.0
+                )
+                response.raise_for_status()
+                positions_data = response.json()
+            
+            # Normalize field names to match expected format
+            normalized_positions = []
+            for pos in positions_data:
+                normalized_pos = {
+                    'asset_id': pos.get('asset', ''),
+                    'market': pos.get('conditionId', ''),
+                    'size': pos.get('size', 0),
+                    'avg_price': pos.get('avgPrice', 0),
+                    'current_price': pos.get('avgPrice', 0),  # Will be updated from orderbook if needed
+                    'unrealized_pnl': 0  # Will be calculated if needed
+                }
+                normalized_positions.append(normalized_pos)
+            
+            return normalized_positions
 
         except Exception as e:
             logger.error(f"Failed to fetch positions: {e}")
