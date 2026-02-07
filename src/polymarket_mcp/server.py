@@ -20,7 +20,8 @@ from .tools import (
     TradingTools,
     get_tool_definitions,
     portfolio_integration,
-    realtime
+    realtime,
+    redemption
 )
 
 # Configure logging
@@ -50,6 +51,7 @@ async def list_tools() -> list[types.Tool]:
         - 10 Market Analysis tools (always available - public API)
         - 12 Trading tools (requires API credentials)
         - 8 Portfolio Management tools (requires API credentials)
+        - 4 Redemption tools (requires API credentials)
         - 7 Real-time WebSocket tools (partial - some require auth)
     """
     tools = []
@@ -66,9 +68,11 @@ async def list_tools() -> list[types.Tool]:
         tools.extend(get_tool_definitions())
         # Portfolio management tools (require auth)
         tools.extend(portfolio_integration.get_portfolio_tool_definitions())
-        logger.info("Trading and Portfolio tools enabled (authenticated)")
+        # Redemption tools (require auth)
+        tools.extend(redemption.get_redemption_tool_definitions())
+        logger.info("Trading, Portfolio, and Redemption tools enabled (authenticated)")
     else:
-        logger.info("Trading and Portfolio tools disabled (no API credentials - read-only mode)")
+        logger.info("Trading, Portfolio, and Redemption tools disabled (no API credentials - read-only mode)")
 
     # Real-time tools (partial functionality without auth)
     tools.extend(realtime.get_tools())
@@ -208,6 +212,17 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 arguments,
                 polymarket_client,
                 safety_limits,
+                config
+            )
+
+        # Route to redemption tools
+        elif name in ["get_closed_positions", "get_redeemable_positions",
+                      "redeem_winning_positions", "redeem_all_winning_positions"]:
+            return await redemption.call_redemption_tool(
+                name,
+                arguments,
+                polymarket_client,
+                get_rate_limiter(),
                 config
             )
 
