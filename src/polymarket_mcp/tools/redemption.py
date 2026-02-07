@@ -53,6 +53,15 @@ async def _fetch_closed_positions(all_positions: List, gamma_client: httpx.Async
     if positions_by_market:
         # Fetch all markets concurrently
         async def check_market(market_id):
+            """
+            Check if a market is closed and return its positions.
+            
+            Args:
+                market_id: Market condition ID to check
+                
+            Returns:
+                list: Positions for this market if closed, empty list otherwise
+            """
             try:
                 market_response = await gamma_client.get(
                     f"https://gamma-api.polymarket.com/markets/{market_id}",

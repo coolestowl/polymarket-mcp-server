@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_orderbook(orderbook) -> dict:
-    """Parse orderbook data whether it's a dict or SDK object"""
+    """
+    Parse orderbook data whether it's a dict or SDK object.
+    
+    Args:
+        orderbook: Either a dict or SDK OrderBookSummary object from get_orderbook()
+        
+    Returns:
+        dict: Normalized orderbook dict with 'bids' and 'asks' keys
+    """
     if isinstance(orderbook, dict):
         return orderbook
     # Handle SDK OrderBookSummary object
