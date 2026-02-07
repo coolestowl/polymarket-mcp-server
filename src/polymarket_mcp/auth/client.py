@@ -285,8 +285,13 @@ class PolymarketClient:
 
             # Convert OrderSummary object to dictionary if needed
             if not isinstance(order_response, dict):
+                # Get order ID - try 'id' first, then fall back to 'orderID'
+                order_id_value = getattr(order_response, 'id', None)
+                if order_id_value is None:
+                    order_id_value = getattr(order_response, 'orderID', None)
+                
                 order_response = {
-                    'orderID': getattr(order_response, 'id', None) or getattr(order_response, 'orderID', None),
+                    'orderID': order_id_value,
                     'status': getattr(order_response, 'status', 'submitted'),
                     'success': getattr(order_response, 'success', True),
                 }
