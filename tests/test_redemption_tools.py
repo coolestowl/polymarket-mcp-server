@@ -3,6 +3,7 @@ Tests for redemption tools.
 
 Tests all 4 redemption tools.
 """
+import json
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -153,7 +154,6 @@ class TestGetClosedPositions:
             )
 
             assert len(result) == 1
-            import json
             data = json.loads(result[0].text)
             assert data["success"] is True
             assert data["total_positions"] == 1
@@ -259,7 +259,6 @@ class TestGetRedeemablePositions:
             )
 
             assert len(result) == 1
-            import json
             data = json.loads(result[0].text)
             assert data["success"] is True
             assert data["total_redeemable"] == 2
@@ -327,7 +326,6 @@ class TestRedeemWinningPositions:
                 )
 
                 assert len(result) == 1
-                import json
                 data = json.loads(result[0].text)
                 assert data["success"] is True
                 assert "transaction_hash" in data
@@ -380,7 +378,6 @@ class TestRedeemAllWinningPositions:
             )
 
             assert len(result) == 1
-            import json
             data = json.loads(result[0].text)
             assert data["success"] is True
             assert data["dry_run"] is True

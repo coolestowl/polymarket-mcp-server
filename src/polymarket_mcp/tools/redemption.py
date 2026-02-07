@@ -10,6 +10,7 @@ Provides tools for:
 Reference: https://docs.polymarket.com/developers/CTF/redeem
 """
 import logging
+import json
 from typing import Dict, Any, List, Optional
 import httpx
 from web3 import Web3
@@ -89,7 +90,6 @@ async def get_closed_positions(
             }
             result["positions"].append(position_info)
 
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(result, indent=2)
@@ -101,7 +101,6 @@ async def get_closed_positions(
             "success": False,
             "error": str(e)
         }
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(error_result, indent=2)
@@ -190,7 +189,6 @@ async def get_redeemable_positions(
             }
             result["positions"].append(position_info)
 
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(result, indent=2)
@@ -202,7 +200,6 @@ async def get_redeemable_positions(
             "success": False,
             "error": str(e)
         }
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(error_result, indent=2)
@@ -261,16 +258,30 @@ async def redeem_winning_positions(
         # Prepare transaction
         parent_collection_id = b'\x00' * 32  # bytes32(0) for Polymarket
 
-        # Build transaction
-        tx = ctf_contract.functions.redeemPositions(
+        # Build transaction with dynamic gas estimation
+        tx_function = ctf_contract.functions.redeemPositions(
             Web3.to_checksum_address(USDC_ADDRESS),  # collateralToken
             parent_collection_id,  # parentCollectionId
             condition_id_bytes,  # conditionId
             index_sets  # indexSets
-        ).build_transaction({
+        )
+
+        # Estimate gas dynamically
+        try:
+            estimated_gas = tx_function.estimate_gas({
+                'from': account.address
+            })
+            # Add 20% buffer to estimated gas
+            gas_limit = int(estimated_gas * 1.2)
+        except Exception as gas_error:
+            logger.warning(f"Gas estimation failed: {gas_error}, using default 200000")
+            gas_limit = 200000
+
+        # Build transaction
+        tx = tx_function.build_transaction({
             'from': account.address,
             'nonce': w3.eth.get_transaction_count(account.address),
-            'gas': 200000,  # Estimate gas
+            'gas': gas_limit,
             'gasPrice': w3.eth.gas_price,
             'chainId': config.POLYMARKET_CHAIN_ID
         })
@@ -289,10 +300,10 @@ async def redeem_winning_positions(
             "transaction_hash": tx_hash.hex(),
             "condition_id": condition_id,
             "index_sets": index_sets,
+            "gas_used": gas_limit,
             "status": "Transaction sent. Check block explorer for confirmation."
         }
 
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(result, indent=2)
@@ -306,7 +317,6 @@ async def redeem_winning_positions(
             "condition_id": condition_id,
             "index_sets": index_sets
         }
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(error_result, indent=2)
@@ -340,7 +350,6 @@ async def redeem_all_winning_positions(
         )
 
         # Parse the result
-        import json
         redeemable_data = json.loads(redeemable_result[0].text)
 
         if not redeemable_data.get("success"):
@@ -440,7 +449,6 @@ async def redeem_all_winning_positions(
             "success": False,
             "error": str(e)
         }
-        import json
         return [types.TextContent(
             type="text",
             text=json.dumps(error_result, indent=2)
