@@ -408,6 +408,7 @@ class PolymarketClient:
 
         try:
             async with httpx.AsyncClient() as http_client:
+                # Data API requires lowercase address
                 response = await http_client.get(
                     "https://data-api.polymarket.com/positions",
                     params={"user": self.address.lower()},
@@ -424,8 +425,9 @@ class PolymarketClient:
                     'market': pos.get('conditionId', ''),
                     'size': pos.get('size', 0),
                     'avg_price': pos.get('avgPrice', 0),
-                    'current_price': pos.get('avgPrice', 0),  # Will be updated from orderbook if needed
-                    'unrealized_pnl': 0  # Will be calculated if needed
+                    # current_price is set to avg_price as placeholder; will be fetched from orderbook if needed
+                    'current_price': pos.get('avgPrice', 0),
+                    'unrealized_pnl': 0  # Calculated dynamically when needed
                 }
                 normalized_positions.append(normalized_pos)
             
