@@ -425,9 +425,12 @@ class PolymarketClient:
                     'market': pos.get('conditionId', ''),
                     'size': pos.get('size', 0),
                     'avg_price': pos.get('avgPrice', 0),
-                    # current_price is set to avg_price as placeholder; will be fetched from orderbook if needed
+                    # NOTE: current_price set to avg_price as approximation since Data API doesn't provide it.
+                    # For precise calculations, current price should be fetched from orderbook separately.
                     'current_price': pos.get('avgPrice', 0),
-                    'unrealized_pnl': 0  # Calculated dynamically when needed
+                    # NOTE: unrealized_pnl set to 0 as placeholder. Will be calculated if needed based on
+                    # current_price - avg_price. The Data API doesn't provide this directly.
+                    'unrealized_pnl': 0
                 }
                 normalized_positions.append(normalized_pos)
             
