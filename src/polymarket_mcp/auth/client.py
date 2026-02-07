@@ -283,6 +283,19 @@ class PolymarketClient:
             # Post order using client (create_and_post_order creates, signs, and posts the order)
             order_response = self.client.create_and_post_order(order_args)
 
+            # Convert OrderSummary object to dictionary if needed
+            if not isinstance(order_response, dict):
+                # Get order ID - try 'id' first, then fall back to 'orderID'
+                order_id_value = getattr(order_response, 'id', None)
+                if order_id_value is None:
+                    order_id_value = getattr(order_response, 'orderID', None)
+                
+                order_response = {
+                    'orderID': order_id_value,
+                    'status': getattr(order_response, 'status', 'submitted'),
+                    'success': getattr(order_response, 'success', True),
+                }
+
             logger.info(
                 f"Order posted: {side} {size} @ {price} "
                 f"(token: {token_id}, order_id: {order_response.get('orderID')})"
