@@ -9,6 +9,7 @@ Provides tools for:
 
 Reference: https://docs.polymarket.com/developers/CTF/redeem
 """
+import asyncio
 import logging
 import json
 from typing import Dict, Any, List, Optional
@@ -68,27 +69,39 @@ async def get_closed_positions(
         # Filter for closed positions (markets that are resolved/closed)
         positions_data = []
         if all_positions:
-            # Get unique market IDs from positions
-            market_ids = list(set(pos.get('conditionId') for pos in all_positions if pos.get('conditionId')))
+            # Group positions by market ID for efficiency (O(N))
+            positions_by_market = {}
+            for pos in all_positions:
+                market_id = pos.get('conditionId')
+                if market_id:
+                    if market_id not in positions_by_market:
+                        positions_by_market[market_id] = []
+                    positions_by_market[market_id].append(pos)
             
-            # Fetch market details to check if closed
-            if market_ids:
-                async with httpx.AsyncClient() as client:
-                    for market_id in market_ids:
+            # Fetch market details to check if closed (concurrent requests)
+            if positions_by_market:
+                async with httpx.AsyncClient() as market_client:
+                    # Fetch all markets concurrently
+                    async def check_market(market_id):
                         try:
-                            market_response = await client.get(
+                            market_response = await market_client.get(
                                 f"https://gamma-api.polymarket.com/markets/{market_id}",
                                 timeout=10.0
                             )
                             if market_response.status_code == 200:
                                 market = market_response.json()
-                                # Check if market is closed
+                                # Return positions if market is closed
                                 if market.get('closed') or market.get('resolved'):
-                                    # Add positions for this closed market
-                                    positions_data.extend([p for p in all_positions if p.get('conditionId') == market_id])
+                                    return positions_by_market[market_id]
                         except Exception as e:
                             logger.warning(f"Failed to fetch market {market_id}: {e}")
-                            continue
+                        return []
+                    
+                    # Run all market checks concurrently
+                    results = await asyncio.gather(*[check_market(mid) for mid in positions_by_market.keys()])
+                    # Flatten results
+                    for result in results:
+                        positions_data.extend(result)
 
         if not positions_data:
             return [types.TextContent(
@@ -173,27 +186,39 @@ async def get_redeemable_positions(
         # Filter for closed positions (markets that are resolved/closed)
         positions_data = []
         if all_positions:
-            # Get unique market IDs from positions
-            market_ids = list(set(pos.get('conditionId') for pos in all_positions if pos.get('conditionId')))
+            # Group positions by market ID for efficiency (O(N))
+            positions_by_market = {}
+            for pos in all_positions:
+                market_id = pos.get('conditionId')
+                if market_id:
+                    if market_id not in positions_by_market:
+                        positions_by_market[market_id] = []
+                    positions_by_market[market_id].append(pos)
             
-            # Fetch market details to check if closed
-            if market_ids:
-                async with httpx.AsyncClient() as client:
-                    for market_id in market_ids:
+            # Fetch market details to check if closed (concurrent requests)
+            if positions_by_market:
+                async with httpx.AsyncClient() as market_client:
+                    # Fetch all markets concurrently
+                    async def check_market(market_id):
                         try:
-                            market_response = await client.get(
+                            market_response = await market_client.get(
                                 f"https://gamma-api.polymarket.com/markets/{market_id}",
                                 timeout=10.0
                             )
                             if market_response.status_code == 200:
                                 market = market_response.json()
-                                # Check if market is closed
+                                # Return positions if market is closed
                                 if market.get('closed') or market.get('resolved'):
-                                    # Add positions for this closed market
-                                    positions_data.extend([p for p in all_positions if p.get('conditionId') == market_id])
+                                    return positions_by_market[market_id]
                         except Exception as e:
                             logger.warning(f"Failed to fetch market {market_id}: {e}")
-                            continue
+                        return []
+                    
+                    # Run all market checks concurrently
+                    results = await asyncio.gather(*[check_market(mid) for mid in positions_by_market.keys()])
+                    # Flatten results
+                    for result in results:
+                        positions_data.extend(result)
 
         if not positions_data:
             return [types.TextContent(
