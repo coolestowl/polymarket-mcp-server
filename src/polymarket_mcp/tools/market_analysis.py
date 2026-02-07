@@ -173,11 +173,11 @@ async def get_current_price(
 
         if side in ["BUY", "BOTH"]:
             buy_data = await _fetch_clob_api("/price", {"token_id": token_id, "side": "BUY"})
-            price_data.ask = float(buy_data.get("price", 0))
+            price_data.bid = float(buy_data.get("price", 0))
 
         if side in ["SELL", "BOTH"]:
             sell_data = await _fetch_clob_api("/price", {"token_id": token_id, "side": "SELL"})
-            price_data.bid = float(sell_data.get("price", 0))
+            price_data.ask = float(sell_data.get("price", 0))
 
         # Calculate mid price
         if price_data.bid is not None and price_data.ask is not None:

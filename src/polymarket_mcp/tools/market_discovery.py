@@ -198,7 +198,7 @@ async def filter_markets_by_category(
         Markets in the specified category
     """
     try:
-        params: Dict[str, Any] = {"tag_slug": category}
+        params: Dict[str, Any] = {"tag_slug": [category]}
 
         if active_only:
             params["closed"] = "false"
@@ -265,7 +265,7 @@ async def get_featured_markets(limit: int = 10) -> List[Dict[str, Any]]:
     """
     try:
         # Fetch featured events (featured is an events endpoint param)
-        params: Dict[str, Any] = {"featured": "true", "active": "true"}
+        params: Dict[str, Any] = {"featured": "true", "closed": "false"}
         events = await _fetch_gamma_markets("/events", params, limit)
 
         # Extract markets from featured events
@@ -343,7 +343,7 @@ async def get_sports_markets(
         Sports markets
     """
     try:
-        params: Dict[str, Any] = {"tag_slug": "sports", "closed": "false"}
+        params: Dict[str, Any] = {"tag_slug": ["sports"], "closed": "false"}
 
         markets = await _fetch_gamma_markets("/markets", params, limit=100)
 
@@ -382,7 +382,7 @@ async def get_crypto_markets(
         Crypto-related markets
     """
     try:
-        params: Dict[str, Any] = {"tag_slug": "crypto", "closed": "false"}
+        params: Dict[str, Any] = {"tag_slug": ["crypto"], "closed": "false"}
 
         markets = await _fetch_gamma_markets("/markets", params, limit=100)
 
