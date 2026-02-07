@@ -56,13 +56,39 @@ async def get_closed_positions(
                 "user": config.POLYGON_ADDRESS.lower()
             }
 
+            # Get all positions and filter for closed markets
             response = await client.get(
-                "https://data-api.polymarket.com/positions/closed-positions",
+                "https://data-api.polymarket.com/positions",
                 params=params,
                 timeout=10.0
             )
             response.raise_for_status()
-            positions_data = response.json()
+            all_positions = response.json()
+
+        # Filter for closed positions (markets that are resolved/closed)
+        positions_data = []
+        if all_positions:
+            # Get unique market IDs from positions
+            market_ids = list(set(pos.get('conditionId') for pos in all_positions if pos.get('conditionId')))
+            
+            # Fetch market details to check if closed
+            if market_ids:
+                async with httpx.AsyncClient() as client:
+                    for market_id in market_ids:
+                        try:
+                            market_response = await client.get(
+                                f"https://gamma-api.polymarket.com/markets/{market_id}",
+                                timeout=10.0
+                            )
+                            if market_response.status_code == 200:
+                                market = market_response.json()
+                                # Check if market is closed
+                                if market.get('closed') or market.get('resolved'):
+                                    # Add positions for this closed market
+                                    positions_data.extend([p for p in all_positions if p.get('conditionId') == market_id])
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch market {market_id}: {e}")
+                            continue
 
         if not positions_data:
             return [types.TextContent(
@@ -135,13 +161,39 @@ async def get_redeemable_positions(
                 "user": config.POLYGON_ADDRESS.lower()
             }
 
+            # Get all positions and filter for closed markets
             response = await client.get(
-                "https://data-api.polymarket.com/positions/closed-positions",
+                "https://data-api.polymarket.com/positions",
                 params=params,
                 timeout=10.0
             )
             response.raise_for_status()
-            positions_data = response.json()
+            all_positions = response.json()
+
+        # Filter for closed positions (markets that are resolved/closed)
+        positions_data = []
+        if all_positions:
+            # Get unique market IDs from positions
+            market_ids = list(set(pos.get('conditionId') for pos in all_positions if pos.get('conditionId')))
+            
+            # Fetch market details to check if closed
+            if market_ids:
+                async with httpx.AsyncClient() as client:
+                    for market_id in market_ids:
+                        try:
+                            market_response = await client.get(
+                                f"https://gamma-api.polymarket.com/markets/{market_id}",
+                                timeout=10.0
+                            )
+                            if market_response.status_code == 200:
+                                market = market_response.json()
+                                # Check if market is closed
+                                if market.get('closed') or market.get('resolved'):
+                                    # Add positions for this closed market
+                                    positions_data.extend([p for p in all_positions if p.get('conditionId') == market_id])
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch market {market_id}: {e}")
+                            continue
 
         if not positions_data:
             return [types.TextContent(
