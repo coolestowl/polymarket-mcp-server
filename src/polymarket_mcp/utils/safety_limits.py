@@ -48,10 +48,11 @@ class MarketData:
 
     @property
     def spread(self) -> float:
-        """Calculate spread percentage"""
-        if self.best_bid == 0:
+        """Calculate spread percentage based on mid price"""
+        mid = (self.best_bid + self.best_ask) / 2
+        if mid == 0:
             return 1.0
-        return (self.best_ask - self.best_bid) / self.best_bid
+        return (self.best_ask - self.best_bid) / mid
 
     @property
     def mid_price(self) -> float:
