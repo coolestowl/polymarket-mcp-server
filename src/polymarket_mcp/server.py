@@ -53,7 +53,7 @@ async def list_tools() -> list[types.Tool]:
     Returns:
         List of tools (conditional on authentication):
         - 8 Market Discovery tools (always available - public API)
-        - 10 Market Analysis tools (always available - public API)
+        - 9 Market Analysis tools (always available - public API)
         - 12 Trading tools (requires API credentials)
         - 8 Portfolio Management tools (requires API credentials)
         - 4 Redemption tools (requires API credentials)
@@ -200,7 +200,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
 
         # Route to market analysis tools
         elif name in ["get_market_details", "get_current_price", "get_orderbook", "get_spread",
-                      "get_market_volume", "get_liquidity", "get_price_history", "get_market_holders",
+                      "get_market_volume", "get_liquidity", "get_price_history",
                       "analyze_market_opportunity", "compare_markets"]:
             return await market_analysis.handle_tool(name, arguments)
 
@@ -403,10 +403,10 @@ async def initialize_server() -> None:
         # Report available tools based on authentication
         if polymarket_client.has_api_credentials():
             logger.info("Mode: FULL (authenticated)")
-            logger.info("Available tools: 43 total (8 Discovery, 10 Analysis, 12 Trading, 8 Portfolio, 5 Allowance)")
+            logger.info("Available tools: 46 total (8 Discovery, 9 Analysis, 12 Trading, 8 Portfolio, 4 Redemption, 5 Allowance)")
         else:
             logger.info("Mode: READ-ONLY (no API credentials)")
-            logger.info("Available tools: 23 total (8 Discovery, 10 Analysis, 5 Allowance)")
+            logger.info("Available tools: 22 total (8 Discovery, 9 Analysis, 5 Allowance)")
             logger.info("Trading and Portfolio tools require API credentials")
 
     except Exception as e:

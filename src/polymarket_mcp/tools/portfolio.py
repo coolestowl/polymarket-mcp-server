@@ -450,9 +450,14 @@ async def get_portfolio_value(
         List with portfolio value data
     """
     try:
-        # Get balance
-        balance_data = await polymarket_client.get_balance()
-        cash_balance = float(balance_data.get('balance', 0))
+        # Get USDC balance via allowance manager approach (direct RPC call)
+        from ..tools.allowance import AllowanceManager
+        allowance_mgr = AllowanceManager(
+            private_key=config.POLYGON_PRIVATE_KEY,
+            address=config.POLYGON_ADDRESS
+        )
+        usdc_data = await allowance_mgr.get_usdc_balance()
+        cash_balance = float(usdc_data.get('balance', 0))
 
         # Get all positions
         async with async_client(timeout=10.0) as client:

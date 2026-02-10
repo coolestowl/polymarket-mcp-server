@@ -328,29 +328,57 @@ async def get_sports_markets(
     """
     Get sports betting markets.
 
+    Uses the events endpoint with tag_slug=sports to filter sports markets.
+
     Args:
-        sport_type: Specific sport (e.g., "NFL", "NBA", "Soccer") or None for all
+        sport_type: Specific sport type keyword (e.g., "NFL", "NBA", "soccer", "FIFA") or None for all
         limit: Maximum number of results (default 20)
 
     Returns:
         Sports markets
     """
     try:
-        params: Dict[str, Any] = {"tag_slug": ["sports"], "closed": "false"}
+        # Fetch events with sports tag
+        async with async_client(timeout=30.0) as client:
+            url = f"{GAMMA_API_URL}/events"
+            params = {"tag_slug": "sports", "closed": "false", "limit": limit * 2}
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            events = response.json()
 
-        markets = await _fetch_gamma_markets("/markets", params, limit=100)
+        # Extract markets from events
+        all_markets = []
+        for event in events:
+            event_title = event.get("title", "").lower()
+            for market in event.get("markets", []):
+                market["event_title"] = event.get("title", "")
+                all_markets.append(market)
 
-        # Further filter by sport type if specified
+        # Filter by sport_type if specified
         if sport_type:
             sport_type_lower = sport_type.lower()
-            markets = [
-                m for m in markets
-                if sport_type_lower in m.get("question", "").lower() or
-                   sport_type_lower in m.get("title", "").lower() or
-                   any(sport_type_lower in tag.lower() for tag in m.get("tags", []))
-            ]
+            filtered_markets = []
+            for m in all_markets:
+                question = m.get("question", "").lower()
+                event_title = m.get("event_title", "").lower()
+                # Check if sport_type appears in question or event title
+                if sport_type_lower in question or sport_type_lower in event_title:
+                    filtered_markets.append(m)
+            all_markets = filtered_markets
 
-        result = markets[:limit]
+        # Sort by volume (descending)
+        all_markets.sort(key=lambda m: float(m.get("volume24hr", 0) or 0), reverse=True)
+
+        # Deduplicate by market id
+        seen_ids = set()
+        unique_markets = []
+        for m in all_markets:
+            mid = m.get("id")
+            if mid not in seen_ids:
+                seen_ids.add(mid)
+                unique_markets.append(m)
+
+        result = unique_markets[:limit]
         logger.info(f"Found {len(result)} sports markets (type: {sport_type or 'all'})")
 
         return result
@@ -367,27 +395,61 @@ async def get_crypto_markets(
     """
     Get cryptocurrency-related markets.
 
+    Searches for markets containing crypto-related keywords in question/title.
+
     Args:
-        symbol: Specific crypto symbol (e.g., "BTC", "ETH") or None for all
+        symbol: Specific crypto symbol (e.g., "BTC", "ETH", "Bitcoin") or None for all
         limit: Maximum number of results (default 20)
 
     Returns:
         Crypto-related markets
     """
     try:
-        params: Dict[str, Any] = {"tag_slug": ["crypto"], "closed": "false"}
+        # Use search with crypto-related terms
+        crypto_keywords = ["bitcoin", "btc", "ethereum", "eth", "crypto", "solana", "sol"]
 
-        markets = await _fetch_gamma_markets("/markets", params, limit=100)
-
-        # Further filter by symbol if specified
         if symbol:
-            symbol_upper = symbol.upper()
-            markets = [
-                m for m in markets
-                if symbol_upper in m.get("question", "").upper() or
-                   symbol_upper in m.get("title", "").upper() or
-                   any(symbol_upper in tag.upper() for tag in m.get("tags", []))
-            ]
+            # Search for specific symbol
+            search_term = symbol
+        else:
+            # Search for Bitcoin as default broad crypto search
+            search_term = "bitcoin"
+
+        # Use public-search endpoint for better results
+        async with async_client(timeout=30.0) as client:
+            url = f"{GAMMA_API_URL}/public-search"
+            params = {"q": search_term, "limit_per_type": limit * 2}
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        # Extract markets from search results
+        markets = []
+        for event in data.get("events", []):
+            for market in event.get("markets", []):
+                # Filter to only active markets
+                if not market.get("closed", False):
+                    markets.append(market)
+
+        # If no symbol specified, also search for other crypto terms
+        if not symbol and len(markets) < limit:
+            for keyword in ["ethereum", "solana", "crypto"]:
+                if len(markets) >= limit:
+                    break
+                try:
+                    async with async_client(timeout=30.0) as client:
+                        response = await client.get(url, params={"q": keyword, "limit_per_type": 10})
+                        if response.status_code == 200:
+                            extra_data = response.json()
+                            for event in extra_data.get("events", []):
+                                for market in event.get("markets", []):
+                                    if not market.get("closed", False) and market.get("id") not in [m.get("id") for m in markets]:
+                                        markets.append(market)
+                except Exception:
+                    continue
+
+        # Sort by volume
+        markets.sort(key=lambda m: float(m.get("volume24hr", 0) or 0), reverse=True)
 
         result = markets[:limit]
         logger.info(f"Found {len(result)} crypto markets (symbol: {symbol or 'all'})")

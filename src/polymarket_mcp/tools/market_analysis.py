@@ -1,7 +1,7 @@
 """
 Market Analysis Tools for Polymarket MCP Server.
 
-Provides 10 tools for analyzing markets:
+Provides 9 tools for analyzing markets:
 - get_market_details: Complete market information
 - get_current_price: Current bid/ask prices
 - get_orderbook: Complete order book
@@ -9,7 +9,6 @@ Provides 10 tools for analyzing markets:
 - get_market_volume: Volume statistics
 - get_liquidity: Available liquidity
 - get_price_history: Historical price data
-- get_market_holders: Top position holders
 - analyze_market_opportunity: AI-powered analysis
 - compare_markets: Compare multiple markets
 """
@@ -125,6 +124,12 @@ async def get_market_details(
         Full market object with all metadata
     """
     try:
+        # Convert numeric IDs to strings for API compatibility
+        if market_id is not None:
+            market_id = str(market_id)
+        if condition_id is not None:
+            condition_id = str(condition_id)
+
         # Determine which identifier to use
         if slug:
             data = await _fetch_gamma_api(f"/markets/slug/{slug}")
@@ -265,20 +270,21 @@ async def get_spread(token_id: str) -> Dict[str, float]:
 
 
 async def get_market_volume(
-    market_id: str,
+    market_id,
     timeframes: Optional[List[str]] = None
 ) -> VolumeData:
     """
     Get volume statistics.
 
     Args:
-        market_id: Market ID
+        market_id: Market ID (string or integer)
         timeframes: List of timeframes (default: ['24h', '7d', '30d'])
 
     Returns:
         VolumeData with breakdown by timeframe
     """
     try:
+        market_id = str(market_id)  # Convert to string for API compatibility
         if timeframes is None:
             timeframes = ['24h', '7d', '30d']
 
@@ -302,17 +308,18 @@ async def get_market_volume(
         raise
 
 
-async def get_liquidity(market_id: str) -> Dict[str, Any]:
+async def get_liquidity(market_id) -> Dict[str, Any]:
     """
     Get available liquidity.
 
     Args:
-        market_id: Market ID
+        market_id: Market ID (string or integer)
 
     Returns:
         Total liquidity in USD
     """
     try:
+        market_id = str(market_id)  # Convert to string for API compatibility
         market_data = await get_market_details(market_id=market_id)
 
         liquidity = float(market_data.get("liquidity", 0) or 0)
@@ -429,17 +436,18 @@ async def get_market_holders(
         raise
 
 
-async def analyze_market_opportunity(market_id: str) -> MarketOpportunity:
+async def analyze_market_opportunity(market_id) -> MarketOpportunity:
     """
     AI-powered market analysis.
 
     Args:
-        market_id: Market ID
+        market_id: Market ID (string or integer)
 
     Returns:
         Complete analysis with recommendation
     """
     try:
+        market_id = str(market_id)  # Convert to string for API compatibility
         # Get comprehensive market data
         market_details = await get_market_details(market_id=market_id)
 
@@ -546,17 +554,20 @@ async def analyze_market_opportunity(market_id: str) -> MarketOpportunity:
         raise
 
 
-async def compare_markets(market_ids: List[str]) -> List[Dict[str, Any]]:
+async def compare_markets(market_ids: List) -> List[Dict[str, Any]]:
     """
     Compare multiple markets.
 
     Args:
-        market_ids: List of market IDs to compare
+        market_ids: List of market IDs to compare (strings or integers)
 
     Returns:
         Comparison table with metrics for each market
     """
     try:
+        # Convert all IDs to strings
+        market_ids = [str(mid) for mid in market_ids]
+
         if len(market_ids) < 2:
             raise ValueError("At least 2 markets required for comparison")
 
@@ -613,7 +624,7 @@ def get_tools() -> List[types.Tool]:
                 "type": "object",
                 "properties": {
                     "market_id": {
-                        "type": "string",
+                        "type": ["string", "integer"],
                         "description": "Market ID"
                     },
                     "condition_id": {
@@ -688,7 +699,7 @@ def get_tools() -> List[types.Tool]:
                 "type": "object",
                 "properties": {
                     "market_id": {
-                        "type": "string",
+                        "type": ["string", "integer"],
                         "description": "Market ID"
                     },
                     "timeframes": {
@@ -707,7 +718,7 @@ def get_tools() -> List[types.Tool]:
                 "type": "object",
                 "properties": {
                     "market_id": {
-                        "type": "string",
+                        "type": ["string", "integer"],
                         "description": "Market ID"
                     }
                 },
@@ -747,32 +758,13 @@ def get_tools() -> List[types.Tool]:
             }
         ),
         types.Tool(
-            name="get_market_holders",
-            description="Get top position holders for a market. Note: Requires authenticated access.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "market_id": {
-                        "type": "string",
-                        "description": "Market ID"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Number of top holders (default 10)",
-                        "default": 10
-                    }
-                },
-                "required": ["market_id"]
-            }
-        ),
-        types.Tool(
             name="analyze_market_opportunity",
             description="AI-powered market analysis with trading recommendation, risk assessment, and confidence score.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "market_id": {
-                        "type": "string",
+                        "type": ["string", "integer"],
                         "description": "Market ID to analyze"
                     }
                 },
@@ -787,7 +779,7 @@ def get_tools() -> List[types.Tool]:
                 "properties": {
                     "market_ids": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {"type": ["string", "integer"]},
                         "description": "List of market IDs to compare (2-10 markets)"
                     }
                 },
@@ -828,8 +820,6 @@ async def handle_tool(name: str, arguments: Dict[str, Any]) -> List[types.TextCo
             result = await get_liquidity(**arguments)
         elif name == "get_price_history":
             result = await get_price_history(**arguments)
-        elif name == "get_market_holders":
-            result = await get_market_holders(**arguments)
         elif name == "analyze_market_opportunity":
             result = await analyze_market_opportunity(**arguments)
             result = result.model_dump(mode='json')
