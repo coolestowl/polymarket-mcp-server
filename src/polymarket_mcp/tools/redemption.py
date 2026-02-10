@@ -388,8 +388,9 @@ async def redeem_winning_positions(
         # Sign transaction
         signed_tx = account.sign_transaction(tx)
 
-        # Send transaction
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        # Send transaction (web3.py 7.x uses raw_transaction, older versions use rawTransaction)
+        raw_tx = getattr(signed_tx, 'raw_transaction', None) or signed_tx.rawTransaction
+        tx_hash = w3.eth.send_raw_transaction(raw_tx)
         
         # Wait for receipt (optional - can be async)
         logger.info(f"Redemption transaction sent: {tx_hash.hex()}")
