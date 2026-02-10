@@ -16,8 +16,6 @@ from ..utils import (
     OrderRequest,
     Position,
     MarketData,
-    EndpointCategory,
-    get_rate_limiter,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,12 +24,13 @@ logger = logging.getLogger(__name__)
 def _parse_orderbook(orderbook) -> dict:
     """
     Parse orderbook data whether it's a dict or SDK object.
-    
+
     Args:
         orderbook: Either a dict or SDK OrderBookSummary object from get_orderbook()
-        
+
     Returns:
-        dict: Normalized orderbook dict with 'bids' and 'asks' keys
+        dict: Normalized orderbook dict with 'bids' and 'asks' keys,
+              where each entry is a dict with 'price' and 'size' keys
     """
     if isinstance(orderbook, dict):
         return orderbook
@@ -40,6 +39,36 @@ def _parse_orderbook(orderbook) -> dict:
         'bids': getattr(orderbook, 'bids', []) or [],
         'asks': getattr(orderbook, 'asks', []) or [],
     }
+
+
+def _get_price_from_entry(entry) -> float:
+    """
+    Extract price from an orderbook entry, handling both dict and object formats.
+
+    Args:
+        entry: Either a dict with 'price' key or an object with price attribute
+
+    Returns:
+        float: The price value
+    """
+    if isinstance(entry, dict):
+        return float(entry.get('price', 0))
+    return float(getattr(entry, 'price', 0))
+
+
+def _get_size_from_entry(entry) -> float:
+    """
+    Extract size from an orderbook entry, handling both dict and object formats.
+
+    Args:
+        entry: Either a dict with 'size' key or an object with size attribute
+
+    Returns:
+        float: The size value
+    """
+    if isinstance(entry, dict):
+        return float(entry.get('size', 0))
+    return float(getattr(entry, 'size', 0))
 
 
 class TradingTools:
@@ -61,7 +90,6 @@ class TradingTools:
         self.client = client
         self.safety_limits = safety_limits
         self.config = config
-        self.rate_limiter = get_rate_limiter()
 
     # ========== ORDER CREATION TOOLS ==========
 
@@ -97,8 +125,7 @@ class TradingTools:
         """
         try:
             # Rate limit check
-            await self.rate_limiter.acquire(EndpointCategory.TRADING_BURST)
-
+            
             # Validate parameters
             if not 0 < price <= 1.0:
                 raise ValueError(f"Price must be between 0 and 1, got {price}")
@@ -142,12 +169,18 @@ class TradingTools:
             bids = parsed_orderbook.get('bids', [])
             asks = parsed_orderbook.get('asks', [])
 
-            best_bid = float(bids[0].price) if bids else 0.0
-            best_ask = float(asks[0].price) if asks else 1.0
+            # Note: Polymarket orderbook returns bids in ascending order and asks in descending order
+            # Best bid is the highest bid (last in list), best ask is the lowest ask (last in list)
+            best_bid = _get_price_from_entry(bids[-1]) if bids else 0.0
+            best_ask = _get_price_from_entry(asks[-1]) if asks else 1.0
 
             # Calculate liquidity
-            bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:10])
-            ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:10])
+            bid_liquidity = sum(_get_price_from_entry(b) * _get_size_from_entry(b) for b in bids[:10])
+            ask_liquidity = sum(_get_price_from_entry(a) * _get_size_from_entry(a) for a in asks[:10])
+
+            # Get tick size and validate price
+            tick_size = self.client.get_tick_size(token_id)
+            price = self._round_to_tick_size(price, tick_size)
 
             market_data = MarketData(
                 market_id=market_id,
@@ -283,17 +316,17 @@ class TradingTools:
             parsed_orderbook = _parse_orderbook(orderbook)
             side_upper = side.upper()
             if side_upper == 'BUY':
-                # Buy at best ask
+                # Buy at best ask (lowest ask price, which is last in descending list)
                 asks = parsed_orderbook.get('asks', [])
                 if not asks:
                     raise ValueError("No asks available in orderbook")
-                best_price = float(asks[0].price)
+                best_price = _get_price_from_entry(asks[-1])
             else:
-                # Sell at best bid
+                # Sell at best bid (highest bid price, which is last in ascending list)
                 bids = parsed_orderbook.get('bids', [])
                 if not bids:
                     raise ValueError("No bids available in orderbook")
-                best_price = float(bids[0].price)
+                best_price = _get_price_from_entry(bids[-1])
 
             logger.info(
                 f"Executing market order: {side} ${size} @ market price {best_price}"
@@ -346,8 +379,7 @@ class TradingTools:
             Dict with results for each order
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.BATCH_OPS)
-
+            
             results = []
             successful = 0
             failed = 0
@@ -428,8 +460,7 @@ class TradingTools:
             Dict with suggested price and reasoning
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.MARKET_DATA)
-
+            
             # Get market data
             market = await self.client.get_market(market_id)
             tokens = market.get('tokens', [])
@@ -450,8 +481,10 @@ class TradingTools:
             if not bids or not asks:
                 raise ValueError("Insufficient orderbook depth")
 
-            best_bid = float(bids[0].price)
-            best_ask = float(asks[0].price)
+            # Note: Polymarket orderbook returns bids ascending, asks descending
+            # Best bid is last in bids list, best ask is last in asks list
+            best_bid = _get_price_from_entry(bids[-1])
+            best_ask = _get_price_from_entry(asks[-1])
             mid_price = (best_bid + best_ask) / 2
             spread = best_ask - best_bid
 
@@ -535,6 +568,9 @@ class TradingTools:
         """
         Check status of a specific order.
 
+        Uses the SDK's get_order method for direct lookup instead of
+        fetching all orders and filtering.
+
         Args:
             order_id: Order ID to check
 
@@ -542,35 +578,50 @@ class TradingTools:
             Dict with order details and fill status
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
+            # Use direct order lookup via SDK
+            order = await self.client.get_order(order_id)
 
-            # Get all orders and find the specific one
-            orders = await self.client.get_orders()
+            if not order:
+                return {
+                    "success": False,
+                    "error": f"Order {order_id} not found",
+                    "order_id": order_id
+                }
 
-            for order in orders:
-                if order.get('id') == order_id or order.get('orderID') == order_id:
-                    filled_amount = float(order.get('sizeMatched', 0))
-                    total_amount = float(order.get('originalSize', order.get('size', 0)))
+            # Handle both dict and object response formats
+            if isinstance(order, dict):
+                filled_amount = float(order.get('sizeMatched', 0))
+                total_amount = float(order.get('originalSize', order.get('size', 0)))
+                status = order.get('status', 'unknown')
+                details = order
+            else:
+                filled_amount = float(getattr(order, 'sizeMatched', 0) or 0)
+                total_amount = float(getattr(order, 'originalSize', 0) or getattr(order, 'size', 0) or 0)
+                status = getattr(order, 'status', 'unknown')
+                # Convert object to dict for details
+                details = {
+                    'id': getattr(order, 'id', None) or getattr(order, 'orderID', None),
+                    'status': status,
+                    'price': getattr(order, 'price', None),
+                    'size': getattr(order, 'size', None),
+                    'sizeMatched': getattr(order, 'sizeMatched', None),
+                    'side': getattr(order, 'side', None),
+                    'token_id': getattr(order, 'token_id', None) or getattr(order, 'asset_id', None),
+                }
 
-                    fill_percentage = (filled_amount / total_amount * 100) if total_amount > 0 else 0
-
-                    return {
-                        "success": True,
-                        "order_id": order_id,
-                        "status": order.get('status', 'unknown'),
-                        "fill_status": {
-                            "filled": filled_amount,
-                            "total": total_amount,
-                            "remaining": total_amount - filled_amount,
-                            "fill_percentage": fill_percentage
-                        },
-                        "details": order
-                    }
+            fill_percentage = (filled_amount / total_amount * 100) if total_amount > 0 else 0
 
             return {
-                "success": False,
-                "error": f"Order {order_id} not found",
-                "order_id": order_id
+                "success": True,
+                "order_id": order_id,
+                "status": status,
+                "fill_status": {
+                    "filled": filled_amount,
+                    "total": total_amount,
+                    "remaining": total_amount - filled_amount,
+                    "fill_percentage": fill_percentage
+                },
+                "details": details
             }
 
         except Exception as e:
@@ -595,14 +646,13 @@ class TradingTools:
             Dict with list of open orders
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
 
             orders = await self.client.get_orders(market=market_id)
 
-            # Filter for open orders only
+            # Filter for open orders only (status can be uppercase or lowercase)
             open_orders = [
                 order for order in orders
-                if order.get('status') in ['open', 'live', 'pending']
+                if order.get('status', '').upper() in ['OPEN', 'LIVE', 'PENDING']
             ]
 
             # Organize by market
@@ -648,8 +698,7 @@ class TradingTools:
             Dict with order history
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
-
+            
             orders = await self.client.get_orders(market=market_id)
 
             # Filter by date if provided
@@ -715,8 +764,7 @@ class TradingTools:
             Dict with cancellation confirmation
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.TRADING_BURST)
-
+            
             response = await self.client.cancel_order(order_id)
 
             return {
@@ -743,52 +791,36 @@ class TradingTools:
         """
         Cancel all orders in a specific market.
 
+        Uses the SDK's cancel_market_orders method for efficient batch cancellation.
+
         Args:
             market_id: Market condition ID
             asset_id: Optional asset/token filter
 
         Returns:
-            Dict with list of cancelled orders
+            Dict with cancellation result
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.TRADING_BURST)
+            # Use SDK's batch cancel method for efficiency
+            response = await self.client.cancel_market_orders(
+                market=market_id,
+                asset_id=asset_id or ""
+            )
 
-            # Get open orders for market
-            orders = await self.client.get_orders(market=market_id, asset_id=asset_id)
-
-            open_orders = [
-                o for o in orders
-                if o.get('status') in ['open', 'live', 'pending']
-            ]
-
-            if not open_orders:
-                return {
-                    "success": True,
-                    "message": "No open orders to cancel",
-                    "market_id": market_id,
-                    "cancelled_count": 0
-                }
-
-            # Cancel each order
-            cancelled = []
-            failed = []
-
-            for order in open_orders:
-                order_id = order.get('id') or order.get('orderID')
-                try:
-                    await self.client.cancel_order(order_id)
-                    cancelled.append(order_id)
-                except Exception as e:
-                    logger.error(f"Failed to cancel order {order_id}: {e}")
-                    failed.append({"order_id": order_id, "error": str(e)})
+            # Parse response to get count
+            cancelled_count = 0
+            if isinstance(response, dict):
+                cancelled_count = len(response.get('canceled', response.get('cancelled', [])))
+            elif isinstance(response, list):
+                cancelled_count = len(response)
 
             return {
                 "success": True,
                 "market_id": market_id,
-                "cancelled_count": len(cancelled),
-                "failed_count": len(failed),
-                "cancelled_orders": cancelled,
-                "failed_orders": failed
+                "asset_id": asset_id,
+                "cancelled_count": cancelled_count,
+                "response": response,
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         except Exception as e:
@@ -807,8 +839,7 @@ class TradingTools:
             Dict with count of cancelled orders
         """
         try:
-            await self.rate_limiter.acquire(EndpointCategory.TRADING_BURST)
-
+            
             response = await self.client.cancel_all_orders()
 
             # Count cancelled orders
@@ -1044,8 +1075,10 @@ class TradingTools:
             bids = parsed_orderbook.get('bids', [])
             asks = parsed_orderbook.get('asks', [])
 
-            best_bid = float(bids[0].price) if bids else 0.0
-            best_ask = float(asks[0].price) if asks else 1.0
+            # Note: Polymarket orderbook returns bids ascending, asks descending
+            # Best bid is last in bids list, best ask is last in asks list
+            best_bid = _get_price_from_entry(bids[-1]) if bids else 0.0
+            best_ask = _get_price_from_entry(asks[-1]) if asks else 1.0
             mid_price = (best_bid + best_ask) / 2
 
             # Calculate expected execution price
@@ -1102,6 +1135,32 @@ class TradingTools:
             }
 
     # ========== HELPER METHODS ==========
+
+    def _round_to_tick_size(self, price: float, tick_size: str) -> float:
+        """
+        Round price to the nearest valid tick size.
+
+        Args:
+            price: The price to round
+            tick_size: Tick size as string (e.g., "0.01", "0.001", "0.0001")
+
+        Returns:
+            Price rounded to the nearest tick size
+        """
+        try:
+            tick = float(tick_size)
+            if tick <= 0:
+                return price
+            # Round to nearest tick
+            rounded = round(price / tick) * tick
+            # Ensure within valid range
+            rounded = max(0.01, min(0.99, rounded))
+            # Format to avoid floating point precision issues
+            decimals = len(tick_size.split('.')[-1]) if '.' in tick_size else 2
+            return round(rounded, decimals)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid tick size {tick_size}, returning original price")
+            return price
 
     def _select_token_id(
         self,

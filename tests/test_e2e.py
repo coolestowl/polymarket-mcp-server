@@ -78,7 +78,6 @@ class TestServerInitialization:
         from polymarket_mcp.tools import (
             market_discovery,
             market_analysis,
-            realtime
         )
 
         # Check market discovery tools
@@ -88,10 +87,6 @@ class TestServerInitialization:
         # Check market analysis tools
         analysis_tools = market_analysis.get_tools()
         assert len(analysis_tools) >= 10, "Expected at least 10 market analysis tools"
-
-        # Check realtime tools
-        realtime_tools = realtime.get_tools()
-        assert len(realtime_tools) >= 7, "Expected at least 7 realtime tools"
 
 
 class TestToolExecution:

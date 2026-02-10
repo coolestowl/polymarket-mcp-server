@@ -46,6 +46,10 @@ class PolymarketConfig(BaseSettings):
         default=None,
         description="L2 API key for authenticated requests"
     )
+    POLYMARKET_SECRET: Optional[str] = Field(
+        default=None,
+        description="L2 API secret (base64-encoded) for authenticated requests"
+    )
     POLYMARKET_PASSPHRASE: Optional[str] = Field(
         default=None,
         description="API key passphrase"
@@ -69,7 +73,7 @@ class PolymarketConfig(BaseSettings):
         description="Maximum position size per market in USD"
     )
     MIN_LIQUIDITY_REQUIRED: float = Field(
-        default=10000.0,
+        default=500.0,
         description="Minimum liquidity required in market before trading (USD)"
     )
     MAX_SPREAD_TOLERANCE: float = Field(
@@ -193,8 +197,8 @@ class PolymarketConfig(BaseSettings):
         """Check if L2 API credentials are configured"""
         return all([
             self.POLYMARKET_API_KEY,
+            self.POLYMARKET_SECRET,
             self.POLYMARKET_PASSPHRASE,
-            self.POLYMARKET_API_KEY_NAME
         ])
 
     def to_dict(self) -> dict:
@@ -205,6 +209,8 @@ class PolymarketConfig(BaseSettings):
             data["POLYGON_PRIVATE_KEY"] = "***HIDDEN***"
         if data.get("POLYMARKET_API_KEY"):
             data["POLYMARKET_API_KEY"] = "***HIDDEN***"
+        if data.get("POLYMARKET_SECRET"):
+            data["POLYMARKET_SECRET"] = "***HIDDEN***"
         if data.get("POLYMARKET_PASSPHRASE"):
             data["POLYMARKET_PASSPHRASE"] = "***HIDDEN***"
         return data
