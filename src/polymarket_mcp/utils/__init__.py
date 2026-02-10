@@ -1,10 +1,5 @@
-"""Utilities for rate limiting, safety validation, and WebSocket management"""
+"""Utilities for safety validation and HTTP client"""
 
-from .rate_limiter import (
-    RateLimiter,
-    EndpointCategory,
-    get_rate_limiter,
-)
 from .safety_limits import (
     SafetyLimits,
     OrderRequest,
@@ -12,34 +7,21 @@ from .safety_limits import (
     MarketData,
     create_safety_limits_from_config,
 )
-from .websocket_manager import (
-    WebSocketManager,
-    ChannelType,
-    EventType,
-    PriceChangeEvent,
-    OrderbookUpdate,
-    OrderUpdate,
-    TradeUpdate,
-    MarketResolutionEvent,
-    Subscription,
+from .http_client import (
+    async_client,
+    create_async_client,
+    get_proxy_url,
+    configure_py_clob_client_proxy,
 )
 
 __all__ = [
-    "RateLimiter",
-    "EndpointCategory",
-    "get_rate_limiter",
     "SafetyLimits",
     "OrderRequest",
     "Position",
     "MarketData",
     "create_safety_limits_from_config",
-    "WebSocketManager",
-    "ChannelType",
-    "EventType",
-    "PriceChangeEvent",
-    "OrderbookUpdate",
-    "OrderUpdate",
-    "TradeUpdate",
-    "MarketResolutionEvent",
-    "Subscription",
+    "async_client",
+    "create_async_client",
+    "get_proxy_url",
+    "configure_py_clob_client_proxy",
 ]

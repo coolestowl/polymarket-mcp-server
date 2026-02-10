@@ -12,6 +12,7 @@ Reference: https://docs.polymarket.com/developers/CTF/redeem
 import asyncio
 import logging
 import json
+import os
 from typing import Dict, Any, List, Optional
 import httpx
 from web3 import Web3
@@ -20,26 +21,32 @@ from eth_account import Account
 import mcp.types as types
 
 from ..contracts.ctf_abi import CTF_ABI, CTF_ADDRESS, USDC_ADDRESS
+from ..utils.http_client import async_client
 
 logger = logging.getLogger(__name__)
 
-# Polygon RPC endpoint
-POLYGON_RPC = "https://polygon-rpc.com"
+# Polygon RPC endpoints from environment or defaults
+POLYGON_RPC_FALLBACK = "https://polygon-rpc.com"
+
+
+def get_polygon_rpc() -> str:
+    """Get Polygon RPC URL from environment or use default."""
+    return os.environ.get('POLYGON_RPC') or POLYGON_RPC_FALLBACK
 
 
 async def _fetch_closed_positions(all_positions: List, gamma_client: httpx.AsyncClient) -> List:
     """
     Filter positions for closed markets by checking market status.
-    
+
     Args:
         all_positions: List of all positions
         gamma_client: HTTP client for Gamma API requests
-        
+
     Returns:
         List of positions in closed/resolved markets
     """
     positions_data = []
-    
+
     # Group positions by market ID for efficiency (O(N))
     positions_by_market = {}
     for pos in all_positions:
@@ -48,46 +55,53 @@ async def _fetch_closed_positions(all_positions: List, gamma_client: httpx.Async
             if market_id not in positions_by_market:
                 positions_by_market[market_id] = []
             positions_by_market[market_id].append(pos)
-    
+
     # Fetch market details to check if closed (concurrent requests)
     if positions_by_market:
         # Fetch all markets concurrently
-        async def check_market(market_id):
+        async def check_market(market_id, positions):
             """
             Check if a market is closed and return its positions.
-            
+
             Args:
                 market_id: Market condition ID to check
-                
+                positions: Positions for this market
+
             Returns:
                 list: Positions for this market if closed, empty list otherwise
             """
             try:
+                # Use condition_id query param instead of path (more reliable)
                 market_response = await gamma_client.get(
-                    f"https://gamma-api.polymarket.com/markets/{market_id}",
+                    "https://gamma-api.polymarket.com/markets",
+                    params={"condition_id": market_id},
                     timeout=10.0
                 )
                 if market_response.status_code == 200:
-                    market = market_response.json()
-                    # Return positions if market is closed
-                    if market.get('closed') or market.get('resolved'):
-                        return positions_by_market[market_id]
+                    markets = market_response.json()
+                    if markets and len(markets) > 0:
+                        market = markets[0]
+                        # Return positions if market is closed
+                        if market.get('closed') or market.get('resolved'):
+                            return positions
             except Exception as e:
                 logger.warning(f"Failed to fetch market {market_id}: {e}")
             return []
-        
+
         # Run all market checks concurrently
-        results = await asyncio.gather(*[check_market(mid) for mid in positions_by_market.keys()])
+        results = await asyncio.gather(*[
+            check_market(mid, positions_by_market[mid])
+            for mid in positions_by_market.keys()
+        ])
         # Flatten results
         for result in results:
             positions_data.extend(result)
-    
+
     return positions_data
 
 
 async def get_closed_positions(
     polymarket_client,
-    rate_limiter,
     config,
     limit: int = 100
 ) -> List[types.TextContent]:
@@ -96,7 +110,6 @@ async def get_closed_positions(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         limit: Maximum positions to return (default: 100)
 
@@ -104,13 +117,8 @@ async def get_closed_positions(
         List with formatted closed position data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
-        # Rate limit for data API
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-
         # Fetch closed positions from Data API
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             params = {
                 "user": config.POLYGON_ADDRESS.lower()
             }
@@ -119,7 +127,6 @@ async def get_closed_positions(
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             all_positions = response.json()
@@ -127,7 +134,7 @@ async def get_closed_positions(
         # Filter for closed positions (markets that are resolved/closed)
         positions_data = []
         if all_positions:
-            async with httpx.AsyncClient() as gamma_client:
+            async with async_client(timeout=10.0) as gamma_client:
                 positions_data = await _fetch_closed_positions(all_positions, gamma_client)
 
         if not positions_data:
@@ -175,7 +182,6 @@ async def get_closed_positions(
 
 async def get_redeemable_positions(
     polymarket_client,
-    rate_limiter,
     config
 ) -> List[types.TextContent]:
     """
@@ -183,20 +189,14 @@ async def get_redeemable_positions(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
 
     Returns:
         List with formatted redeemable position data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
-        # Rate limit for data API
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-
         # Fetch closed positions from Data API
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             params = {
                 "user": config.POLYGON_ADDRESS.lower()
             }
@@ -205,7 +205,6 @@ async def get_redeemable_positions(
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             all_positions = response.json()
@@ -213,13 +212,19 @@ async def get_redeemable_positions(
         # Filter for closed positions (markets that are resolved/closed)
         positions_data = []
         if all_positions:
-            async with httpx.AsyncClient() as gamma_client:
+            async with async_client(timeout=10.0) as gamma_client:
                 positions_data = await _fetch_closed_positions(all_positions, gamma_client)
 
         if not positions_data:
             return [types.TextContent(
                 type="text",
-                text="No positions found."
+                text=json.dumps({
+                    "success": True,
+                    "total_redeemable": 0,
+                    "total_payout_usdc": 0,
+                    "positions": [],
+                    "message": "No closed/resolved positions found."
+                }, indent=2)
             )]
 
         # Filter for redeemable positions only
@@ -228,7 +233,13 @@ async def get_redeemable_positions(
         if not redeemable:
             return [types.TextContent(
                 type="text",
-                text="No redeemable positions found. All winning positions have been redeemed."
+                text=json.dumps({
+                    "success": True,
+                    "total_redeemable": 0,
+                    "total_payout_usdc": 0,
+                    "positions": [],
+                    "message": "No redeemable positions found. All positions have been redeemed."
+                }, indent=2)
             )]
 
         # Format output
@@ -240,21 +251,35 @@ async def get_redeemable_positions(
         }
 
         for pos in redeemable:
-            # Determine index_set based on outcome
+            # Determine index_set based on outcome and outcomeIndex
             outcome = pos.get("outcome")
-            if outcome == "Yes":
+            outcome_index = pos.get("outcomeIndex")
+
+            # Use outcomeIndex if available (most reliable)
+            if outcome_index is not None:
+                # index_set is 2^outcomeIndex (binary position)
+                # outcomeIndex 0 -> index_set 1 (binary: 01)
+                # outcomeIndex 1 -> index_set 2 (binary: 10)
+                index_set = 1 << outcome_index
+            elif outcome in ("Yes", "Up"):
                 index_set = 1
-            elif outcome == "No":
+            elif outcome in ("No", "Down"):
                 index_set = 2
             else:
-                # Multi-outcome market - parse outcome index
-                index_set = None
+                # Try to parse outcome as index
+                try:
+                    idx = int(outcome)
+                    index_set = 1 << idx
+                except (ValueError, TypeError):
+                    # Default to outcome index 1 for unknown outcomes
+                    logger.warning(f"Unknown outcome '{outcome}', defaulting to index_set=2")
+                    index_set = 2
 
             position_info = {
                 "condition_id": pos.get("conditionId"),
                 "market_title": pos.get("title"),
                 "outcome": outcome,
-                "winning_outcome": outcome,
+                "outcome_index": outcome_index,
                 "size": float(pos.get("size", 0)),
                 "expected_payout_usdc": float(pos.get("payout", 0)),
                 "token_id": pos.get("asset"),
@@ -281,28 +306,29 @@ async def get_redeemable_positions(
 
 async def redeem_winning_positions(
     polymarket_client,
-    rate_limiter,
     config,
     condition_id: str,
     index_sets: List[int]
 ) -> List[types.TextContent]:
     """
-    Redeem winning outcome tokens for USDC.e via CTF contract.
+    Redeem outcome tokens from resolved markets via CTF contract.
+
+    This function burns conditional tokens and returns USDC for winning positions.
+    It can also be used to clear losing positions (burns tokens, returns 0 USDC).
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         condition_id: The conditionId of the resolved market
-        index_sets: Index sets to redeem: [1] for YES, [2] for NO
+        index_sets: Index sets to redeem: [1] for outcome 0 (Yes/Up), [2] for outcome 1 (No/Down)
 
     Returns:
         List with transaction result
     """
     try:
         # Initialize Web3
-        w3 = Web3(Web3.HTTPProvider(POLYGON_RPC))
-        
+        w3 = Web3(Web3.HTTPProvider(get_polygon_rpc()))
+
         if not w3.is_connected():
             raise RuntimeError("Failed to connect to Polygon RPC")
 
@@ -398,16 +424,20 @@ async def redeem_winning_positions(
 
 async def redeem_all_winning_positions(
     polymarket_client,
-    rate_limiter,
     config,
     dry_run: bool = False
 ) -> List[types.TextContent]:
     """
-    Batch redeem all redeemable winning positions.
+    Batch redeem all positions from resolved markets.
+
+    This function processes all redeemable positions:
+    - Winning positions: Burns tokens and returns USDC payout
+    - Losing positions: Burns tokens (clears from portfolio) with 0 USDC return
+
+    Use this to clean up your portfolio after markets resolve.
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         dry_run: If true, only simulate without executing (default: false)
 
@@ -418,7 +448,6 @@ async def redeem_all_winning_positions(
         # First, get all redeemable positions
         redeemable_result = await get_redeemable_positions(
             polymarket_client,
-            rate_limiter,
             config
         )
 
@@ -462,20 +491,24 @@ async def redeem_all_winning_positions(
             condition_id = pos.get("condition_id")
             index_set = pos.get("index_set")
 
-            if not condition_id or index_set is None:
-                logger.warning(f"Skipping position with missing data: {pos}")
+            if not condition_id:
+                logger.warning(f"Skipping position with missing condition_id: {pos}")
+                total_failed += 1
+                continue
+
+            if index_set is None:
+                logger.warning(f"Skipping position with missing index_set: {pos}")
                 total_failed += 1
                 continue
 
             try:
                 result = await redeem_winning_positions(
                     polymarket_client,
-                    rate_limiter,
                     config,
                     condition_id,
                     [index_set]
                 )
-                
+
                 result_data = json.loads(result[0].text)
                 if result_data.get("success"):
                     total_success += 1
@@ -567,7 +600,7 @@ REDEMPTION_TOOLS = [
                 "index_sets": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "Index sets to redeem: [1] for YES, [2] for NO. For multi-outcome, use the appropriate index."
+                    "description": "Index sets to redeem: [1] for outcome 0 (Yes/Up), [2] for outcome 1 (No/Down)"
                 }
             },
             "required": ["condition_id", "index_sets"]
@@ -576,7 +609,7 @@ REDEMPTION_TOOLS = [
     },
     {
         "name": "redeem_all_winning_positions",
-        "description": "Batch redeem all redeemable winning positions. Executes multiple blockchain transactions.",
+        "description": "Batch redeem all positions from resolved markets. Clears both winning positions (returns USDC) and losing positions (burns worthless tokens). Use this to clean up your portfolio.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -615,7 +648,6 @@ async def call_redemption_tool(
     name: str,
     arguments: dict,
     polymarket_client,
-    rate_limiter,
     config
 ) -> list[types.TextContent]:
     """
@@ -625,7 +657,6 @@ async def call_redemption_tool(
         name: Tool name
         arguments: Tool arguments
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
 
     Returns:
@@ -647,7 +678,6 @@ async def call_redemption_tool(
     # Call the handler with required dependencies
     result = await tool_handler(
         polymarket_client=polymarket_client,
-        rate_limiter=rate_limiter,
         config=config,
         **arguments
     )

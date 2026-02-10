@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 import mcp.types as types
 import httpx
 
-from ..utils.rate_limiter import EndpointCategory, get_rate_limiter
+from ..utils.http_client import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +83,9 @@ class MarketOpportunity(BaseModel):
 
 
 async def _fetch_gamma_api(endpoint: str, params: Optional[Dict] = None) -> Any:
-    """Fetch from Gamma API with rate limiting"""
-    rate_limiter = get_rate_limiter()
-
-    await rate_limiter.acquire(EndpointCategory.GAMMA_API)
-
+    """Fetch from Gamma API"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with async_client(timeout=30.0) as client:
             url = f"{GAMMA_API_URL}{endpoint}"
             response = await client.get(url, params=params or {})
             response.raise_for_status()
@@ -100,13 +96,9 @@ async def _fetch_gamma_api(endpoint: str, params: Optional[Dict] = None) -> Any:
 
 
 async def _fetch_clob_api(endpoint: str, params: Optional[Dict] = None) -> Any:
-    """Fetch from CLOB API with rate limiting"""
-    rate_limiter = get_rate_limiter()
-
-    await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
-
+    """Fetch from CLOB API (uses proxy due to IP restrictions)"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with async_client(timeout=30.0, use_proxy=True) as client:
             url = f"{CLOB_API_URL}{endpoint}"
             response = await client.get(url, params=params or {})
             response.raise_for_status()

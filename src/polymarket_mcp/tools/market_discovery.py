@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 import mcp.types as types
 import httpx
 
-from ..utils.rate_limiter import EndpointCategory, get_rate_limiter
+from ..utils.http_client import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,8 @@ async def _fetch_gamma_markets(
     Returns:
         List of market dictionaries
     """
-    rate_limiter = get_rate_limiter()
-
-    await rate_limiter.acquire(EndpointCategory.GAMMA_API)
-
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with async_client(timeout=30.0) as client:
             url = f"{GAMMA_API_URL}{endpoint}"
 
             # Set default params
@@ -113,10 +109,7 @@ async def search_markets(
             if "tag" in filters:
                 params["events_tag"] = filters["tag"]
 
-        rate_limiter = get_rate_limiter()
-        await rate_limiter.acquire(EndpointCategory.GAMMA_API)
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with async_client(timeout=30.0) as client:
             url = f"{GAMMA_API_URL}/public-search"
             response = await client.get(url, params=params)
             response.raise_for_status()

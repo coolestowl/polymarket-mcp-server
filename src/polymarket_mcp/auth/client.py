@@ -1,6 +1,13 @@
 """
 Polymarket CLOB client with authentication.
 Handles L1 (private key) and L2 (API key) authentication.
+
+Signature Types:
+- EOA (0): Standard Externally Owned Account signatures (supported)
+- POLY_PROXY (1): Email/Magic wallet signatures (not supported)
+- POLY_GNOSIS_SAFE (2): Browser wallet proxy signatures (not supported)
+
+This client only supports EOA (signature_type=0) for simplicity.
 """
 from typing import Dict, Any, List, Optional
 import logging
@@ -10,8 +17,12 @@ from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
 from py_clob_client.constants import POLYGON
 
 from .signer import OrderSigner
+from ..utils.http_client import async_client
 
 logger = logging.getLogger(__name__)
+
+# Signature type for EOA (Externally Owned Account)
+SIGNATURE_TYPE_EOA = 0
 
 
 class PolymarketClient:
@@ -57,12 +68,11 @@ class PolymarketClient:
 
         # L2 API credentials
         self.api_creds: Optional[ApiCreds] = None
-        if api_key and (api_secret or passphrase):
-            secret = api_secret or passphrase
+        if api_key and api_secret and passphrase:
             self.api_creds = ApiCreds(
                 api_key=api_key,
-                api_secret=secret,
-                api_passphrase=secret
+                api_secret=api_secret,
+                api_passphrase=passphrase
             )
 
         # Initialize CLOB client
@@ -75,13 +85,14 @@ class PolymarketClient:
         )
 
     def _initialize_client(self) -> None:
-        """Initialize the ClobClient with appropriate authentication"""
+        """Initialize the ClobClient with appropriate authentication (EOA only)"""
         try:
             # Build client arguments
             client_args = {
                 "host": self.host,
                 "chain_id": self.chain_id,
                 "key": self.private_key,
+                "signature_type": SIGNATURE_TYPE_EOA,  # EOA signatures only
             }
 
             # Add L2 credentials if available
@@ -91,7 +102,7 @@ class PolymarketClient:
             # Create client
             self.client = ClobClient(**client_args)
 
-            logger.info("ClobClient initialized successfully")
+            logger.info("ClobClient initialized successfully (signature_type=EOA)")
 
         except Exception as e:
             logger.error(f"Failed to initialize ClobClient: {e}")
@@ -269,20 +280,34 @@ class PolymarketClient:
             )
 
         try:
-            # Build order args
+            # Build order args (order_type is NOT part of OrderArgs)
             order_args = OrderArgs(
                 token_id=token_id,
                 price=price,
                 size=size,
                 side=side.upper(),
-                order_type=order_type,
             )
 
             if expiration:
                 order_args.expiration = expiration
 
-            # Post order using client (create_and_post_order creates, signs, and posts the order)
-            order_response = self.client.create_and_post_order(order_args)
+            # Create the signed order first
+            signed_order = self.client.create_order(order_args)
+
+            # Map order_type string to OrderType enum
+            order_type_enum = OrderType.GTC  # default
+            if order_type:
+                order_type_upper = order_type.upper()
+                if order_type_upper == "FOK":
+                    order_type_enum = OrderType.FOK
+                elif order_type_upper == "GTD":
+                    order_type_enum = OrderType.GTD
+                elif order_type_upper in ("FAK", "IOC"):
+                    # FAK is also known as IOC (Immediate-Or-Cancel)
+                    order_type_enum = OrderType.FOK  # Use FOK as closest equivalent
+
+            # Post the signed order with order type
+            order_response = self.client.post_order(signed_order, order_type_enum)
 
             # Convert OrderSummary object to dictionary if needed
             if not isinstance(order_response, dict):
@@ -332,6 +357,65 @@ class PolymarketClient:
 
         except Exception as e:
             logger.error(f"Failed to cancel order {order_id}: {e}")
+            raise
+
+    async def cancel_orders(self, order_ids: List[str]) -> Dict[str, Any]:
+        """
+        Cancel multiple orders by IDs.
+
+        Args:
+            order_ids: List of order IDs to cancel
+
+        Returns:
+            Cancellation response
+
+        Raises:
+            RuntimeError: If L2 credentials not available
+        """
+        if not self.api_creds:
+            raise RuntimeError("L2 API credentials required for canceling orders")
+
+        try:
+            response = self.client.cancel_orders(order_ids)
+
+            logger.info(f"Cancelled {len(order_ids)} orders")
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to cancel orders: {e}")
+            raise
+
+    async def cancel_market_orders(
+        self,
+        market: str = "",
+        asset_id: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Cancel all orders for a specific market or asset.
+
+        Uses the official SDK's cancel_market_orders method for efficiency.
+
+        Args:
+            market: Market condition ID (optional)
+            asset_id: Asset/token ID (optional)
+
+        Returns:
+            Cancellation response
+
+        Raises:
+            RuntimeError: If L2 credentials not available
+        """
+        if not self.api_creds:
+            raise RuntimeError("L2 API credentials required")
+
+        try:
+            response = self.client.cancel_market_orders(market=market, asset_id=asset_id)
+
+            logger.info(f"Cancelled orders for market={market}, asset_id={asset_id}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to cancel market orders: {e}")
             raise
 
     async def cancel_all_orders(self) -> Dict[str, Any]:
@@ -393,6 +477,69 @@ class PolymarketClient:
             logger.error(f"Failed to fetch orders: {e}")
             raise
 
+    async def get_order(self, order_id: str) -> Dict[str, Any]:
+        """
+        Get a specific order by ID.
+
+        Uses the official SDK's get_order method for direct lookup.
+
+        Args:
+            order_id: Order ID to fetch
+
+        Returns:
+            Order details dictionary
+
+        Raises:
+            RuntimeError: If L2 credentials not available
+        """
+        if not self.api_creds:
+            raise RuntimeError("L2 API credentials required")
+
+        try:
+            order = self.client.get_order(order_id)
+            return order
+
+        except Exception as e:
+            logger.error(f"Failed to fetch order {order_id}: {e}")
+            raise
+
+    def get_tick_size(self, token_id: str) -> str:
+        """
+        Get the tick size (minimum price increment) for a token.
+
+        Args:
+            token_id: Token ID
+
+        Returns:
+            Tick size as string (e.g., "0.01", "0.001", "0.0001")
+        """
+        try:
+            tick_size = self.client.get_tick_size(token_id)
+            return str(tick_size)
+
+        except Exception as e:
+            logger.error(f"Failed to get tick size for {token_id}: {e}")
+            # Default to 0.01 if unable to fetch
+            return "0.01"
+
+    def get_neg_risk(self, token_id: str) -> bool:
+        """
+        Check if a token/market uses the NegRisk CTF adapter.
+
+        Args:
+            token_id: Token ID
+
+        Returns:
+            True if market uses neg-risk CTF, False otherwise
+        """
+        try:
+            return self.client.get_neg_risk(token_id)
+
+        except Exception as e:
+            logger.error(f"Failed to get neg_risk for {token_id}: {e}")
+            # Default to False if unable to fetch
+            return False
+
     async def get_positions(self) -> List[Dict[str, Any]]:
         """
         Get user's positions via Polymarket Data API.
@@ -407,12 +554,11 @@ class PolymarketClient:
             raise RuntimeError("Polygon address required")
 
         try:
-            async with httpx.AsyncClient() as http_client:
+            async with async_client(timeout=10.0) as http_client:
                 # Data API requires lowercase address
                 response = await http_client.get(
                     "https://data-api.polymarket.com/positions",
                     params={"user": self.address.lower()},
-                    timeout=10.0
                 )
                 response.raise_for_status()
                 positions_data = response.json()

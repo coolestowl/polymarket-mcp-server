@@ -17,16 +17,18 @@ import asyncio
 
 import mcp.types as types
 
+from polymarket_mcp.utils.http_client import async_client
+
 logger = logging.getLogger(__name__)
 
 
 def _parse_orderbook(orderbook) -> dict:
     """
     Parse orderbook data whether it's a dict or SDK object.
-    
+
     Args:
         orderbook: Either a dict or SDK OrderBookSummary object from get_orderbook()
-        
+
     Returns:
         dict: Normalized orderbook dict with 'bids' and 'asks' keys
     """
@@ -37,6 +39,36 @@ def _parse_orderbook(orderbook) -> dict:
         'bids': getattr(orderbook, 'bids', []) or [],
         'asks': getattr(orderbook, 'asks', []) or [],
     }
+
+
+def _get_price_from_entry(entry) -> float:
+    """
+    Extract price from an orderbook entry, handling both dict and object formats.
+
+    Args:
+        entry: Either a dict with 'price' key or an object with price attribute
+
+    Returns:
+        float: The price value
+    """
+    if isinstance(entry, dict):
+        return float(entry.get('price', 0))
+    return float(getattr(entry, 'price', 0))
+
+
+def _get_size_from_entry(entry) -> float:
+    """
+    Extract size from an orderbook entry, handling both dict and object formats.
+
+    Args:
+        entry: Either a dict with 'size' key or an object with size attribute
+
+    Returns:
+        float: The size value
+    """
+    if isinstance(entry, dict):
+        return float(entry.get('size', 0))
+    return float(getattr(entry, 'size', 0))
 
 
 class PortfolioDataCache:
@@ -70,7 +102,6 @@ _portfolio_cache = PortfolioDataCache()
 
 async def get_all_positions(
     polymarket_client,
-    rate_limiter,
     config,
     include_closed: bool = False,
     min_value: float = 1.0,
@@ -81,7 +112,6 @@ async def get_all_positions(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         include_closed: Include closed positions (default: False)
         min_value: Minimum position value in USD (default: 1.0)
@@ -91,11 +121,6 @@ async def get_all_positions(
         List with formatted position data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
-        # Rate limit for data API
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-
         # Check cache first
         cache_key = f"positions_{include_closed}_{min_value}"
         cached_data = _portfolio_cache.get(cache_key)
@@ -104,7 +129,7 @@ async def get_all_positions(
             positions_data = cached_data
         else:
             # Fetch positions using direct HTTP call to Data API
-            async with httpx.AsyncClient() as client:
+            async with async_client(timeout=10.0) as client:
                 params = {
                     "user": config.POLYGON_ADDRESS.lower()
                 }
@@ -112,7 +137,6 @@ async def get_all_positions(
                 response = await client.get(
                     "https://data-api.polymarket.com/positions",
                     params=params,
-                    timeout=10.0
                 )
                 response.raise_for_status()
                 positions_data = response.json()
@@ -143,13 +167,16 @@ async def get_all_positions(
 
             # Fetch current price from orderbook
             try:
-                await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
                 # Calculate mid price
                 parsed_orderbook = _parse_orderbook(orderbook)
-                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
-                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
+                bids = parsed_orderbook.get('bids', [])
+                asks = parsed_orderbook.get('asks', [])
+                # Note: Polymarket orderbook returns bids ascending, asks descending
+                # Best bid is last in bids list, best ask is last in asks list
+                best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+                best_ask = _get_price_from_entry(asks[-1]) if asks else 0
                 current_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
             except Exception as e:
                 logger.warning(f"Failed to fetch current price for {token_id}: {e}")
@@ -237,7 +264,6 @@ async def get_all_positions(
 
 async def get_position_details(
     polymarket_client,
-    rate_limiter,
     config,
     market_id: str
 ) -> List[types.TextContent]:
@@ -246,7 +272,6 @@ async def get_position_details(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         market_id: Market condition ID
 
@@ -254,11 +279,8 @@ async def get_position_details(
         List with detailed position data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Fetch position data
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             params = {
                 "user": config.POLYGON_ADDRESS.lower(),
                 "market": market_id
@@ -267,7 +289,6 @@ async def get_position_details(
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             positions = response.json()
@@ -282,16 +303,13 @@ async def get_position_details(
         token_id = position.get('asset')
 
         # Fetch market details
-        await rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
         market = await polymarket_client.get_market(market_id)
 
         # Fetch current orderbook
-        await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
         orderbook = await polymarket_client.get_orderbook(token_id)
 
         # Fetch recent trades in this market
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             trade_response = await client.get(
                 "https://data-api.polymarket.com/trades",
                 params={
@@ -299,7 +317,6 @@ async def get_position_details(
                     "market": market_id,
                     "limit": 10
                 },
-                timeout=10.0
             )
             trade_response.raise_for_status()
             recent_trades = trade_response.json()
@@ -312,8 +329,10 @@ async def get_position_details(
         parsed_orderbook = _parse_orderbook(orderbook)
         bids = parsed_orderbook.get('bids', [])
         asks = parsed_orderbook.get('asks', [])
-        best_bid = float(bids[0].price) if bids else 0
-        best_ask = float(asks[0].price) if asks else 0
+        # Note: Polymarket orderbook returns bids ascending, asks descending
+        # Best bid is last in bids list, best ask is last in asks list
+        best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+        best_ask = _get_price_from_entry(asks[-1]) if asks else 0
         mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
         spread = best_ask - best_bid if (best_bid and best_ask) else 0
 
@@ -339,8 +358,8 @@ async def get_position_details(
             suggestions.append("Market lowly valued - high upside if outcome occurs")
 
         # Liquidity check
-        bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
-        ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
+        bid_liquidity = sum(_get_price_from_entry(b) * _get_size_from_entry(b) for b in bids[:5]) if bids else 0
+        ask_liquidity = sum(_get_price_from_entry(a) * _get_size_from_entry(a) for a in asks[:5]) if asks else 0
         total_liquidity = bid_liquidity + ask_liquidity
 
         if total_liquidity < 1000:
@@ -416,7 +435,6 @@ async def get_position_details(
 
 async def get_portfolio_value(
     polymarket_client,
-    rate_limiter,
     config,
     include_breakdown: bool = True
 ) -> List[types.TextContent]:
@@ -425,7 +443,6 @@ async def get_portfolio_value(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         include_breakdown: Include market-by-market breakdown (default: True)
 
@@ -433,27 +450,21 @@ async def get_portfolio_value(
         List with portfolio value data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Get balance
-        await rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
         balance_data = await polymarket_client.get_balance()
         cash_balance = float(balance_data.get('balance', 0))
 
         # Get all positions
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": config.POLYGON_ADDRESS.lower()},
-                timeout=10.0
             )
             response.raise_for_status()
             positions = response.json()
 
         # Get open orders
         try:
-            await rate_limiter.acquire(EndpointCategory.CLOB_GENERAL)
             orders = await polymarket_client.get_orders()
         except Exception as e:
             logger.warning(f"Failed to fetch orders: {e}")
@@ -473,11 +484,14 @@ async def get_portfolio_value(
 
             # Get current price
             try:
-                await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
                 parsed_orderbook = _parse_orderbook(orderbook)
-                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
-                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
+                bids = parsed_orderbook.get('bids', [])
+                asks = parsed_orderbook.get('asks', [])
+                # Note: Polymarket orderbook returns bids ascending, asks descending
+                # Best bid is last in bids list, best ask is last in asks list
+                best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+                best_ask = _get_price_from_entry(asks[-1]) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else float(pos.get('avgPrice', 0))
             except Exception as e:
                 logger.warning(f"Failed to fetch price for {token_id}: {e}")
@@ -558,7 +572,6 @@ async def get_portfolio_value(
 
 async def get_pnl_summary(
     polymarket_client,
-    rate_limiter,
     config,
     timeframe: Literal['24h', '7d', '30d', 'all'] = 'all'
 ) -> List[types.TextContent]:
@@ -567,7 +580,6 @@ async def get_pnl_summary(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         timeframe: Time period - '24h', '7d', '30d', or 'all' (default: 'all')
 
@@ -575,8 +587,6 @@ async def get_pnl_summary(
         List with P&L summary data
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Calculate time range
         now = datetime.now()
         timeframe_map = {
@@ -589,8 +599,7 @@ async def get_pnl_summary(
         start_time = None if timeframe == 'all' else int((now - timeframe_map[timeframe]).timestamp())
 
         # Fetch trades (Data API /trades does not support time filtering)
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             params: Dict[str, Any] = {
                 "user": config.POLYGON_ADDRESS.lower(),
                 "limit": 500
@@ -599,7 +608,6 @@ async def get_pnl_summary(
             response = await client.get(
                 "https://data-api.polymarket.com/trades",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             trades = response.json()
@@ -612,12 +620,10 @@ async def get_pnl_summary(
             ]
 
         # Fetch current positions for unrealized P&L
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": config.POLYGON_ADDRESS.lower()},
-                timeout=10.0
             )
             response.raise_for_status()
             positions = response.json()
@@ -691,11 +697,14 @@ async def get_pnl_summary(
 
             # Get current price
             try:
-                await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
                 parsed_orderbook = _parse_orderbook(orderbook)
-                best_bid = float(parsed_orderbook.get('bids', [{}])[0].get('price', 0)) if parsed_orderbook.get('bids') else 0
-                best_ask = float(parsed_orderbook.get('asks', [{}])[0].get('price', 0)) if parsed_orderbook.get('asks') else 0
+                bids = parsed_orderbook.get('bids', [])
+                asks = parsed_orderbook.get('asks', [])
+                # Note: Polymarket orderbook returns bids ascending, asks descending
+                # Best bid is last in bids list, best ask is last in asks list
+                best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+                best_ask = _get_price_from_entry(asks[-1]) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
             except Exception as e:
                 logger.warning(f"Failed to fetch price for {token_id}: {e}")
@@ -781,7 +790,6 @@ async def get_pnl_summary(
 
 async def get_trade_history(
     polymarket_client,
-    rate_limiter,
     config,
     market_id: Optional[str] = None,
     start_date: Optional[str] = None,
@@ -794,7 +802,6 @@ async def get_trade_history(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         market_id: Filter by market ID (optional)
         start_date: Start date in ISO format (optional)
@@ -806,8 +813,6 @@ async def get_trade_history(
         List with trade history
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Build query parameters (/trades supports: user, market, eventId,
         # limit, offset, takerOnly, filterType, filterAmount, side)
         params: Dict[str, Any] = {
@@ -822,12 +827,10 @@ async def get_trade_history(
             params['side'] = side
 
         # Fetch trades
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/trades",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             trades = response.json()
@@ -901,7 +904,6 @@ async def get_trade_history(
 
 async def get_activity_log(
     polymarket_client,
-    rate_limiter,
     config,
     activity_type: Literal['TRADE', 'SPLIT', 'MERGE', 'REDEEM', 'REWARD', 'CONVERSION', 'MAKER_REBATE', 'all'] = 'all',
     start_date: Optional[str] = None,
@@ -913,7 +915,6 @@ async def get_activity_log(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         activity_type: Filter by type - 'TRADE', 'SPLIT', 'MERGE', 'REDEEM',
                        'REWARD', 'CONVERSION', 'MAKER_REBATE', or 'all'
@@ -925,8 +926,6 @@ async def get_activity_log(
         List with activity log
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Build query parameters (API uses 'start'/'end', not 'start_time'/'end_time')
         params: Dict[str, Any] = {
             "user": config.POLYGON_ADDRESS.lower(),
@@ -945,12 +944,10 @@ async def get_activity_log(
             params['end'] = int(end_dt.timestamp())
 
         # Fetch activity
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/activity",
                 params=params,
-                timeout=10.0
             )
             response.raise_for_status()
             activities = response.json()
@@ -1002,7 +999,6 @@ async def get_activity_log(
 
 async def analyze_portfolio_risk(
     polymarket_client,
-    rate_limiter,
     config
 ) -> List[types.TextContent]:
     """
@@ -1010,22 +1006,17 @@ async def analyze_portfolio_risk(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
 
     Returns:
         List with risk analysis
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Fetch all positions
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": config.POLYGON_ADDRESS.lower()},
-                timeout=10.0
             )
             response.raise_for_status()
             positions = response.json()
@@ -1054,19 +1045,20 @@ async def analyze_portfolio_risk(
 
             # Get current price and liquidity
             try:
-                await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
                 parsed_orderbook = _parse_orderbook(orderbook)
                 bids = parsed_orderbook.get('bids', [])
                 asks = parsed_orderbook.get('asks', [])
-                best_bid = float(bids[0].price) if bids else 0
-                best_ask = float(asks[0].price) if asks else 0
+                # Note: Polymarket orderbook returns bids ascending, asks descending
+                # Best bid is last in bids list, best ask is last in asks list
+                best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+                best_ask = _get_price_from_entry(asks[-1]) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
 
                 # Calculate liquidity
-                bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
-                ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
+                bid_liquidity = sum(_get_price_from_entry(b) * _get_size_from_entry(b) for b in bids[:5]) if bids else 0
+                ask_liquidity = sum(_get_price_from_entry(a) * _get_size_from_entry(a) for a in asks[:5]) if asks else 0
                 total_liquidity = bid_liquidity + ask_liquidity
 
                 if total_liquidity < 1000:
@@ -1237,7 +1229,6 @@ async def analyze_portfolio_risk(
 
 async def suggest_portfolio_actions(
     polymarket_client,
-    rate_limiter,
     config,
     goal: Literal['balanced', 'aggressive', 'conservative'] = 'balanced',
     max_actions: int = 5
@@ -1247,7 +1238,6 @@ async def suggest_portfolio_actions(
 
     Args:
         polymarket_client: PolymarketClient instance
-        rate_limiter: RateLimiter instance
         config: PolymarketConfig instance
         goal: Investment goal - 'balanced', 'aggressive', or 'conservative' (default: 'balanced')
         max_actions: Maximum number of suggestions (default: 5)
@@ -1256,15 +1246,11 @@ async def suggest_portfolio_actions(
         List with suggested actions
     """
     try:
-        from ..utils.rate_limiter import EndpointCategory
-
         # Fetch all positions
-        await rate_limiter.acquire(EndpointCategory.DATA_API)
-        async with httpx.AsyncClient() as client:
+        async with async_client(timeout=10.0) as client:
             response = await client.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": config.POLYGON_ADDRESS.lower()},
-                timeout=10.0
             )
             response.raise_for_status()
             positions = response.json()
@@ -1291,20 +1277,21 @@ async def suggest_portfolio_actions(
 
             # Get current market data
             try:
-                await rate_limiter.acquire(EndpointCategory.MARKET_DATA)
                 orderbook = await polymarket_client.get_orderbook(token_id)
 
                 parsed_orderbook = _parse_orderbook(orderbook)
                 bids = parsed_orderbook.get('bids', [])
                 asks = parsed_orderbook.get('asks', [])
-                best_bid = float(bids[0].price) if bids else 0
-                best_ask = float(asks[0].price) if asks else 0
+                # Note: Polymarket orderbook returns bids ascending, asks descending
+                # Best bid is last in bids list, best ask is last in asks list
+                best_bid = _get_price_from_entry(bids[-1]) if bids else 0
+                best_ask = _get_price_from_entry(asks[-1]) if asks else 0
                 mid_price = (best_bid + best_ask) / 2 if (best_bid and best_ask) else avg_price
                 spread = (best_ask - best_bid) if (best_bid and best_ask) else 0
 
                 # Liquidity
-                bid_liquidity = sum(float(b.price) * float(b.size) for b in bids[:5]) if bids else 0
-                ask_liquidity = sum(float(a.price) * float(a.size) for a in asks[:5]) if asks else 0
+                bid_liquidity = sum(_get_price_from_entry(b) * _get_size_from_entry(b) for b in bids[:5]) if bids else 0
+                ask_liquidity = sum(_get_price_from_entry(a) * _get_size_from_entry(a) for a in asks[:5]) if asks else 0
                 total_liquidity = bid_liquidity + ask_liquidity
             except Exception as e:
                 logger.warning(f"Failed to fetch orderbook for {token_id}: {e}")

@@ -7,22 +7,27 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 
+# Configure proxy BEFORE importing any modules that use py_clob_client
+# This is critical because py_clob_client creates a global HTTP client on import
+from .utils.http_client import configure_py_clob_client_proxy
+configure_py_clob_client_proxy()
+
 import mcp.server.stdio
 import mcp.types as types
 from mcp.server import Server
 
 from .config import load_config, PolymarketConfig
 from .auth import PolymarketClient, create_polymarket_client
-from .utils import get_rate_limiter, create_safety_limits_from_config, SafetyLimits, WebSocketManager
+from .utils import create_safety_limits_from_config, SafetyLimits
 from .tools import (
     market_discovery,
     market_analysis,
     TradingTools,
     get_tool_definitions,
     portfolio_integration,
-    realtime,
     redemption
 )
+from .tools.allowance import AllowanceManager, get_allowance_tool_definitions
 
 # Configure logging
 logging.basicConfig(
@@ -37,7 +42,7 @@ config: Optional[PolymarketConfig] = None
 polymarket_client: Optional[PolymarketClient] = None
 safety_limits: Optional[SafetyLimits] = None
 trading_tools: Optional[TradingTools] = None
-websocket_manager: Optional[WebSocketManager] = None
+allowance_manager: Optional[AllowanceManager] = None
 
 
 @server.list_tools()
@@ -52,7 +57,7 @@ async def list_tools() -> list[types.Tool]:
         - 12 Trading tools (requires API credentials)
         - 8 Portfolio Management tools (requires API credentials)
         - 4 Redemption tools (requires API credentials)
-        - 7 Real-time WebSocket tools (partial - some require auth)
+        - 5 Allowance Management tools (requires wallet)
     """
     tools = []
 
@@ -74,8 +79,17 @@ async def list_tools() -> list[types.Tool]:
     else:
         logger.info("Trading, Portfolio, and Redemption tools disabled (no API credentials - read-only mode)")
 
-    # Real-time tools (partial functionality without auth)
-    tools.extend(realtime.get_tools())
+    # Allowance management tools (require wallet but not L2 auth)
+    if allowance_manager:
+        tools.extend([
+            types.Tool(
+                name=tool["name"],
+                description=tool["description"],
+                inputSchema=tool["inputSchema"]
+            )
+            for tool in get_allowance_tool_definitions()
+        ])
+        logger.info("Allowance management tools enabled")
 
     return tools
 
@@ -87,7 +101,6 @@ async def list_resources() -> list[types.Resource]:
 
     Resources provide read-only access to:
     - Server status and configuration
-    - Rate limiter status
     - Safety limits configuration
     """
     resources = [
@@ -101,12 +114,6 @@ async def list_resources() -> list[types.Resource]:
             uri="polymarket://config",
             name="Configuration",
             description="View current safety limits and trading configuration",
-            mimeType="application/json"
-        ),
-        types.Resource(
-            uri="polymarket://rate-limits",
-            name="Rate Limiter Status",
-            description="Check API rate limit status across all endpoint categories",
             mimeType="application/json"
         ),
     ]
@@ -166,12 +173,6 @@ async def read_resource(uri: str) -> str:
         }
         return json.dumps(config_data, indent=2)
 
-    elif uri == "polymarket://rate-limits":
-        # Rate limiter status
-        rate_limiter = get_rate_limiter()
-        status = rate_limiter.get_status()
-        return json.dumps(status, indent=2)
-
     else:
         return json.dumps({"error": f"Unknown resource: {uri}"})
 
@@ -211,7 +212,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 name,
                 arguments,
                 polymarket_client,
-                get_rate_limiter(),
                 config
             )
 
@@ -222,18 +222,47 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 name,
                 arguments,
                 polymarket_client,
-                get_rate_limiter(),
                 config
             )
 
-        # Route to real-time websocket tools
-        elif name in ["subscribe_market_prices", "subscribe_orderbook_updates", "subscribe_user_orders",
-                      "subscribe_user_trades", "subscribe_market_resolution", "get_realtime_status",
-                      "unsubscribe_realtime"]:
-            if not websocket_manager:
-                raise ValueError("WebSocket manager not initialized")
-            result = await realtime.handle_tool(name, arguments, websocket_manager, server)
-            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+        # Route to allowance management tools
+        elif name in ["get_wallet_balances", "check_trading_allowances",
+                      "approve_usdc_for_trading", "approve_ctf_for_trading",
+                      "approve_all_for_trading"]:
+            if not allowance_manager:
+                raise ValueError("Allowance manager not initialized - wallet required")
+
+            if name == "get_wallet_balances":
+                usdc_balance = await allowance_manager.get_usdc_balance()
+                matic_balance = await allowance_manager.get_matic_balance()
+                result = {
+                    "success": True,
+                    "address": allowance_manager.address,
+                    "usdc": usdc_balance,
+                    "matic": matic_balance
+                }
+            elif name == "check_trading_allowances":
+                result = await allowance_manager.check_all_allowances()
+            elif name == "approve_usdc_for_trading":
+                result = await allowance_manager.approve_usdc(
+                    spender_name=arguments.get("spender"),
+                    amount=arguments.get("amount")
+                )
+            elif name == "approve_ctf_for_trading":
+                result = await allowance_manager.approve_ctf(
+                    operator_name=arguments.get("operator")
+                )
+            elif name == "approve_all_for_trading":
+                result = await allowance_manager.approve_all()
+            else:
+                raise ValueError(f"Unknown allowance tool: {name}")
+
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
+                )
+            ]
 
         # Route to trading tools
         elif trading_tools:
@@ -297,11 +326,10 @@ async def initialize_server() -> None:
     - Load configuration from environment
     - Initialize Polymarket client
     - Set up safety limits
-    - Initialize rate limiter
     - Initialize trading tools
-    - Initialize WebSocket manager
+    - Initialize allowance manager
     """
-    global config, polymarket_client, safety_limits, trading_tools, websocket_manager
+    global config, polymarket_client, safety_limits, trading_tools, allowance_manager
 
     try:
         # Load configuration
@@ -320,7 +348,7 @@ async def initialize_server() -> None:
             address=config.POLYGON_ADDRESS,
             chain_id=config.POLYMARKET_CHAIN_ID,
             api_key=config.POLYMARKET_API_KEY,
-            api_secret=config.POLYMARKET_PASSPHRASE,
+            api_secret=config.POLYMARKET_SECRET,
             passphrase=config.POLYMARKET_PASSPHRASE,
         )
 
@@ -348,10 +376,6 @@ async def initialize_server() -> None:
         logger.info("Initializing safety limits...")
         safety_limits = create_safety_limits_from_config(config)
 
-        # Initialize rate limiter (singleton)
-        rate_limiter = get_rate_limiter()
-        logger.info("Rate limiter initialized")
-
         # Initialize trading tools (only if authenticated)
         if polymarket_client.has_api_credentials():
             logger.info("Initializing trading tools...")
@@ -364,12 +388,14 @@ async def initialize_server() -> None:
         else:
             logger.info("Trading tools NOT initialized (no API credentials - read-only mode)")
 
-        # Initialize WebSocket manager
-        logger.info("Initializing WebSocket manager...")
-        websocket_manager = WebSocketManager(config)
-        # Connect WebSocket (non-blocking)
-        asyncio.create_task(websocket_manager.connect())
-        logger.info("WebSocket manager initialized with 7 real-time tools")
+        # Initialize allowance manager (requires wallet)
+        if config.POLYGON_PRIVATE_KEY and config.POLYGON_ADDRESS:
+            logger.info("Initializing allowance manager...")
+            allowance_manager = AllowanceManager(
+                private_key=config.POLYGON_PRIVATE_KEY,
+                address=config.POLYGON_ADDRESS
+            )
+            logger.info("Allowance manager initialized with 5 tools")
 
         logger.info("Server initialization complete!")
         logger.info(f"Connected to Polymarket on chain ID {config.POLYMARKET_CHAIN_ID}")
@@ -377,10 +403,10 @@ async def initialize_server() -> None:
         # Report available tools based on authentication
         if polymarket_client.has_api_credentials():
             logger.info("Mode: FULL (authenticated)")
-            logger.info("Available tools: 45 total (8 Discovery, 10 Analysis, 12 Trading, 8 Portfolio, 7 Real-time)")
+            logger.info("Available tools: 43 total (8 Discovery, 10 Analysis, 12 Trading, 8 Portfolio, 5 Allowance)")
         else:
             logger.info("Mode: READ-ONLY (no API credentials)")
-            logger.info("Available tools: 25 total (8 Discovery, 10 Analysis, 7 Real-time)")
+            logger.info("Available tools: 23 total (8 Discovery, 10 Analysis, 5 Allowance)")
             logger.info("Trading and Portfolio tools require API credentials")
 
     except Exception as e:
