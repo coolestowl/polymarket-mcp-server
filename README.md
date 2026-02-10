@@ -7,7 +7,7 @@
 
 **Complete AI-Powered Trading Platform for Polymarket Prediction Markets**
 
-Enable Claude to autonomously trade, analyze, and manage positions on Polymarket with 45 comprehensive tools, real-time WebSocket monitoring, and enterprise-grade safety features.
+Enable Claude to autonomously trade, analyze, and manage positions on Polymarket with comprehensive tools and enterprise-grade safety features.
 
 ---
 
@@ -26,15 +26,14 @@ Powered by **[Claude Code](https://claude.ai/code)** from Anthropic
 
 ## ⭐ Key Features
 
-### 🎯 45 Comprehensive Tools Across 5 Categories
+### 🎯 Comprehensive Tools Across 4 Categories
 
 <table>
 <tr>
-<td width="20%" align="center"><b>🔍<br/>Market Discovery</b><br/>8 tools</td>
-<td width="20%" align="center"><b>📊<br/>Market Analysis</b><br/>10 tools</td>
-<td width="20%" align="center"><b>💼<br/>Trading</b><br/>12 tools</td>
-<td width="20%" align="center"><b>📈<br/>Portfolio</b><br/>8 tools</td>
-<td width="20%" align="center"><b>⚡<br/>Real-time</b><br/>7 tools</td>
+<td width="25%" align="center"><b>🔍<br/>Market Discovery</b></td>
+<td width="25%" align="center"><b>📊<br/>Market Analysis</b></td>
+<td width="25%" align="center"><b>💼<br/>Trading</b></td>
+<td width="25%" align="center"><b>📈<br/>Portfolio</b></td>
 </tr>
 </table>
 
@@ -80,16 +79,6 @@ Powered by **[Claude Code](https://claude.ai/code)** from Anthropic
 - Performance metrics
 - **AI-powered portfolio optimization** (conservative/balanced/aggressive)
 
-#### ⚡ Real-time Monitoring (7 tools)
-- Live price updates via WebSocket
-- Orderbook depth streaming
-- User order status notifications
-- Trade execution alerts
-- Market resolution notifications
-- Subscription management
-- System health monitoring
-- Auto-reconnect with exponential backoff
-
 ### 🛡️ Enterprise-Grade Safety & Risk Management
 
 - ✅ **Order Size Limits** - Configurable maximum per order
@@ -103,39 +92,10 @@ Powered by **[Claude Code](https://claude.ai/code)** from Anthropic
 ### ⚙️ Production-Ready Infrastructure
 
 - ✅ **L1 & L2 Authentication** - Wallet (private key) + API key auth
-- ✅ **Advanced Rate Limiting** - Token bucket algorithm respecting all Polymarket API limits
 - ✅ **EIP-712 Signing** - Secure order signatures
-- ✅ **Auto-reconnect WebSockets** - Resilient real-time connections
 - ✅ **Comprehensive Error Handling** - User-friendly error messages
 - ✅ **No Mocks** - Real Polymarket API integration throughout
 - ✅ **Full Test Coverage** - Production-grade testing with real APIs
-
----
-
-## 🌐 Web Dashboard
-
-**NEW**: Manage and monitor your Polymarket MCP Server with a modern web interface!
-
-```bash
-# Start the web dashboard
-polymarket-web
-
-# Or use the quick start script
-./start_web_dashboard.sh
-```
-
-Access at: **http://localhost:8080**
-
-### Dashboard Features
-
-- **Real-time Monitoring**: Live MCP status, WebSocket connection, and statistics
-- **Configuration Management**: Visual sliders for safety limits and trading controls
-- **Market Discovery**: Search, filter, and browse markets with live updates
-- **Market Analysis**: AI-powered analysis with recommendations and risk assessment
-- **System Monitoring**: Performance charts, rate limits, and activity logs
-- **Dark Theme**: Professional UI optimized for extended use
-
-See [WEB_DASHBOARD.md](WEB_DASHBOARD.md) for complete documentation.
 
 ---
 
@@ -151,16 +111,16 @@ curl -sSL https://raw.githubusercontent.com/caiovicentino/polymarket-mcp-server/
 # Or clone and run locally
 git clone https://github.com/caiovicentino/polymarket-mcp-server.git
 cd polymarket-mcp-server
-./quickstart.sh
+./scripts/quickstart.sh
 ```
 
 **Full installation** (with trading):
 ```bash
 # macOS/Linux
-./install.sh
+./scripts/install.sh
 
 # Windows
-install.bat
+scripts\install.bat
 ```
 
 The automated installer will:
@@ -175,10 +135,10 @@ The automated installer will:
 
 | Method | Command | Best For |
 |--------|---------|----------|
-| **Quick Start** | `./quickstart.sh` | First-time users, testing |
-| **DEMO Mode** | `./install.sh --demo` | No wallet, read-only access |
-| **Full Install** | `./install.sh` | Production trading setup |
-| **Windows** | `install.bat` | Windows users |
+| **Quick Start** | `./scripts/quickstart.sh` | First-time users, testing |
+| **DEMO Mode** | `./scripts/install.sh --demo` | No wallet, read-only access |
+| **Full Install** | `./scripts/install.sh` | Production trading setup |
+| **Windows** | `scripts\install.bat` | Windows users |
 
 ### DEMO Mode vs Full Mode
 
@@ -275,22 +235,16 @@ Add to your Claude Desktop configuration file:
 
 ## 📖 Documentation
 
-### Getting Started
-- **[Visual Installation Guide](VISUAL_INSTALL_GUIDE.md)** - Step-by-step with diagrams and screenshots
-- **[FAQ](FAQ.md)** - Frequently asked questions and troubleshooting
-- **[Setup Guide](SETUP_GUIDE.md)** - Detailed configuration instructions
-- **[Demo Video Script](DEMO_VIDEO_SCRIPT.md)** - Video tutorial scripts
+See [docs/](docs/) for full documentation.
 
-### Developer Resources
-- **[Tools Reference](TOOLS_REFERENCE.md)** - Complete API documentation for all 45 tools
-- **[Agent Integration Guide](AGENT_INTEGRATION_GUIDE.md)** - How to integrate with your agents
-- **[Trading Architecture](TRADING_ARCHITECTURE.md)** - System design and architecture
-- **[WebSocket Integration](WEBSOCKET_INTEGRATION.md)** - Real-time data setup
+### Quick Links
+- **[Installation Guide](docs/INSTALLATION.md)** - Complete installation instructions
+- **[Quick Start](docs/QUICKSTART_GUIDE.md)** - Get started in 5 minutes
+- **[Tools Reference](docs/TOOLS_REFERENCE.md)** - API documentation for all tools
+- **[FAQ](docs/FAQ.md)** - Frequently asked questions
 
-### Examples & Guides
-- **[Usage Examples](USAGE_EXAMPLES.py)** - Code examples for all tools
-- **[Test Examples](TEST_EXAMPLES.py)** - Example test implementations
-- **[Market Analysis Scripts](analyze_top_markets.py)** - Advanced analysis examples
+### Examples
+- **[examples/](examples/)** - Code examples and demos
 
 ### System Architecture
 
@@ -317,12 +271,7 @@ Add to your Claude Desktop configuration file:
     │  ┌────────────┐  ┌──────────────────────┐   │
     │  │  Market    │  │  Portfolio           │   │
     │  │  Analysis  │  │  Manager             │   │
-    │  │  (10 tools)│  │  (8 tools)           │   │
     │  └────────────┘  └──────────────────────┘   │
-    │                                              │
-    │  ┌──────────────────────────────────────┐   │
-    │  │  Real-time WebSocket (7 tools)       │   │
-    │  └──────────────────────────────────────┘   │
     └──────────────┬───────────────────────────────┘
                    │
                    ▼
@@ -374,14 +323,6 @@ Ask Claude:
 "What's my P&L for the last 30 days?"
 "Which are my best and worst performing markets?"
 "Suggest portfolio optimizations for a conservative strategy"
-```
-
-### Real-time Monitoring
-```
-"Subscribe to price changes for the government shutdown markets"
-"Monitor my order status in real-time"
-"Alert me when the Eagles vs Packers market moves more than 10%"
-"Show me real-time orderbook updates for [token_id]"
 ```
 
 ---
@@ -458,10 +399,9 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 ## 📊 Project Stats
 
 - **Lines of Code**: ~10,000+ (Python)
-- **Tools**: 45 comprehensive tools
 - **Test Coverage**: High (real API integration)
 - **Documentation**: Comprehensive (multiple guides)
-- **Dependencies**: Modern Python packages (MCP, httpx, websockets, eth-account)
+- **Dependencies**: Modern Python packages (MCP, httpx, eth-account)
 
 ---
 
@@ -534,8 +474,7 @@ The authors and contributors are not responsible for any financial losses incurr
 ## 📈 Roadmap
 
 ### Current Version (v0.1.0)
-- ✅ 45 comprehensive tools
-- ✅ Real-time WebSocket monitoring
+- ✅ Comprehensive trading and analysis tools
 - ✅ Safety limits and risk management
 - ✅ Complete test suite
 - ✅ Comprehensive documentation
