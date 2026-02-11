@@ -203,24 +203,7 @@ class TradingTools:
                 reference_price = best_ask if best_ask > 0 else price
             else:
                 reference_price = best_bid if best_bid > 0 else price
-
-            # Calculate size_in_shares with proper precision for Polymarket API
-            # API requires: maker_amount max 2 decimals, taker_amount max 4 decimals
-            # For BUY: maker_amount = price * size_in_shares (USDC paid)
-            # For SELL: maker_amount = size_in_shares (shares sold)
-            #
-            # To ensure maker_amount has max 2 decimals for BUY orders:
-            # 1. Calculate raw maker_amount = price * raw_size_in_shares
-            # 2. Round maker_amount to 2 decimals
-            # 3. Back-calculate size_in_shares = maker_amount / price, round to 4 decimals
-            raw_size_in_shares = size / reference_price
-            if side == 'BUY':
-                # Ensure price * size_in_shares has max 2 decimals
-                maker_amount = round(price * raw_size_in_shares, 2)
-                size_in_shares = round(maker_amount / price, 4)
-            else:
-                # For SELL, maker_amount = size_in_shares, so just round to 2 decimals
-                size_in_shares = round(raw_size_in_shares, 2)
+            size_in_shares = size / reference_price
 
             # Create order request for validation
             order_request = OrderRequest(
@@ -311,16 +294,16 @@ class TradingTools:
         outcome: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Execute market order at best available price (FOK).
+        Execute market order at best available price using SDK's native market order logic.
 
-        Uses extreme prices (0.99 for BUY, 0.01 for SELL) to ensure immediate
-        execution at the best available market price. The FOK order type
-        guarantees either full execution or complete cancellation.
+        The SDK automatically calculates the optimal execution price based on
+        the orderbook. Uses FOK (Fill-Or-Kill) to ensure complete execution
+        or cancellation.
 
         Args:
             condition_id: Market condition ID (hex string, e.g., '0x...')
             side: 'BUY' or 'SELL'
-            size: Order size in USD
+            size: Order size in USD (for BUY) or shares (for SELL)
             token_id: Specific token ID to trade (optional)
             outcome: Outcome name/index for multi-outcome markets (optional)
 
@@ -329,28 +312,50 @@ class TradingTools:
         """
         try:
             side_upper = side.upper()
-            # Use extreme prices to ensure immediate execution
-            # Actual execution will be at best available price
-            price = 0.99 if side_upper == 'BUY' else 0.01
+
+            # Get market data to resolve token_id
+            market = await self.client.get_market(condition_id)
+            tokens = market.get('tokens', [])
+            if not tokens:
+                raise ValueError(f"No tokens found for market {condition_id}")
+
+            # Select token_id if not provided
+            if not token_id:
+                token_id = self._select_token_id(tokens, side_upper, outcome)
+
+            # Validate token_id exists in market
+            if not any(t.get('token_id') == token_id for t in tokens):
+                raise ValueError(f"Token ID {token_id} not found in market {condition_id}")
 
             logger.info(
-                f"Executing market order: {side} ${size} @ market price (FAK)"
+                f"Executing market order: {side_upper} ${size} @ market price (FOK)"
             )
 
-            # Use FAK (Fill-And-Kill) for market orders
-            # FAK fills as much as possible immediately and cancels the rest
-            result = await self.create_limit_order(
-                condition_id=condition_id,
-                side=side,
-                price=price,
-                size=size,
-                order_type='FAK',
+            # Use SDK's native market order method
+            # For BUY: amount is in USD
+            # For SELL: amount is in shares
+            order_response = await self.client.create_market_order(
                 token_id=token_id,
-                outcome=outcome
+                amount=size,
+                side=side_upper,
             )
 
-            result['execution_type'] = 'market_order'
+            result = {
+                "success": True,
+                "order_id": order_response.get('orderID'),
+                "status": order_response.get('status', 'submitted'),
+                "execution_type": "market_order",
+                "details": {
+                    "condition_id": condition_id,
+                    "token_id": token_id,
+                    "side": side_upper,
+                    "amount": size,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                },
+                "order_response": order_response
+            }
 
+            logger.info(f"Market order created successfully: {result['order_id']}")
             return result
 
         except Exception as e:

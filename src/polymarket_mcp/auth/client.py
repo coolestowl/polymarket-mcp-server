@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 import logging
 import httpx
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
+from py_clob_client.clob_types import ApiCreds, OrderArgs, MarketOrderArgs, OrderType
 from py_clob_client.constants import POLYGON
 
 from .signer import OrderSigner
@@ -331,6 +331,74 @@ class PolymarketClient:
 
         except Exception as e:
             logger.error(f"Failed to post order: {e}")
+            raise
+
+    async def create_market_order(
+        self,
+        token_id: str,
+        amount: float,
+        side: str,
+    ) -> Dict[str, Any]:
+        """
+        Create and post a market order using SDK's native market order logic.
+
+        The SDK automatically calculates the optimal price based on orderbook
+        and handles execution. Uses FOK (Fill-Or-Kill) by default.
+
+        Args:
+            token_id: Token ID to trade
+            amount: For BUY: amount in USD. For SELL: amount in shares.
+            side: BUY or SELL
+
+        Returns:
+            Order response dictionary
+
+        Raises:
+            RuntimeError: If L2 credentials not available
+        """
+        if not self.api_creds:
+            raise RuntimeError(
+                "L2 API credentials required for posting orders. "
+                "Call create_api_credentials() first."
+            )
+
+        try:
+            # Build market order args
+            # price=0 tells SDK to auto-calculate market price
+            order_args = MarketOrderArgs(
+                token_id=token_id,
+                amount=amount,
+                side=side.upper(),
+                price=0,  # SDK will calculate optimal price
+            )
+
+            # Create signed market order using SDK's market order logic
+            signed_order = self.client.create_market_order(order_args)
+
+            # Post the signed order (FOK is default for market orders)
+            order_response = self.client.post_order(signed_order, OrderType.FOK)
+
+            # Convert to dictionary if needed
+            if not isinstance(order_response, dict):
+                order_id_value = getattr(order_response, 'id', None)
+                if order_id_value is None:
+                    order_id_value = getattr(order_response, 'orderID', None)
+
+                order_response = {
+                    'orderID': order_id_value,
+                    'status': getattr(order_response, 'status', 'submitted'),
+                    'success': getattr(order_response, 'success', True),
+                }
+
+            logger.info(
+                f"Market order posted: {side} {amount} "
+                f"(token: {token_id}, order_id: {order_response.get('orderID')})"
+            )
+
+            return order_response
+
+        except Exception as e:
+            logger.error(f"Failed to create market order: {e}")
             raise
 
     async def cancel_order(self, order_id: str) -> Dict[str, Any]:
