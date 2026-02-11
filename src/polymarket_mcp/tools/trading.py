@@ -289,6 +289,10 @@ class TradingTools:
         """
         Execute market order at best available price (FOK).
 
+        Uses extreme prices (0.99 for BUY, 0.01 for SELL) to ensure immediate
+        execution at the best available market price. The FOK order type
+        guarantees either full execution or complete cancellation.
+
         Args:
             market_id: Market condition ID
             side: 'BUY' or 'SELL'
@@ -300,49 +304,27 @@ class TradingTools:
             Dict with execution details
         """
         try:
-            # Get current best price
-            market = await self.client.get_market(market_id)
-            tokens = market.get('tokens', [])
-            if not tokens:
-                raise ValueError(f"No tokens found for market {market_id}")
-
-            # Select token ID if not provided
-            if not token_id:
-                token_id = self._select_token_id(tokens, side, outcome)
-
-            # Get best price from orderbook
-            orderbook = await self.client.get_orderbook(token_id)
-
-            parsed_orderbook = _parse_orderbook(orderbook)
             side_upper = side.upper()
-            if side_upper == 'BUY':
-                # Buy at best ask (lowest ask price, which is last in descending list)
-                asks = parsed_orderbook.get('asks', [])
-                if not asks:
-                    raise ValueError("No asks available in orderbook")
-                best_price = _get_price_from_entry(asks[-1])
-            else:
-                # Sell at best bid (highest bid price, which is last in ascending list)
-                bids = parsed_orderbook.get('bids', [])
-                if not bids:
-                    raise ValueError("No bids available in orderbook")
-                best_price = _get_price_from_entry(bids[-1])
+            # Use extreme prices to ensure immediate execution
+            # Actual execution will be at best available price
+            price = 0.99 if side_upper == 'BUY' else 0.01
 
             logger.info(
-                f"Executing market order: {side} ${size} @ market price {best_price}"
+                f"Executing market order: {side} ${size} @ market price (FOK)"
             )
 
             # Use FOK (Fill-Or-Kill) for market orders
             result = await self.create_limit_order(
                 market_id=market_id,
                 side=side,
-                price=best_price,
+                price=price,
                 size=size,
-                order_type='FOK'
+                order_type='FOK',
+                token_id=token_id,
+                outcome=outcome
             )
 
             result['execution_type'] = 'market_order'
-            result['executed_price'] = best_price
 
             return result
 
