@@ -99,7 +99,7 @@ class TestOrderCreationTools:
 
         # Create a limit order at conservative price (unlikely to fill immediately)
         result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="BUY",
             price=0.01,  # Very low price, unlikely to fill
             size=TEST_ORDER_SIZE,
@@ -139,14 +139,14 @@ class TestOrderCreationTools:
         # Create batch of 2 orders at unlikely prices
         orders = [
             {
-                "market_id": TEST_MARKET_ID,
+                "condition_id": TEST_MARKET_ID,
                 "side": "BUY",
                 "price": 0.01,
                 "size": TEST_ORDER_SIZE,
                 "order_type": "GTC"
             },
             {
-                "market_id": TEST_MARKET_ID,
+                "condition_id": TEST_MARKET_ID,
                 "side": "BUY",
                 "price": 0.02,
                 "size": TEST_ORDER_SIZE,
@@ -210,7 +210,7 @@ class TestOrderManagementTools:
 
         # 1. Create order
         create_result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="BUY",
             price=0.01,
             size=TEST_ORDER_SIZE,
@@ -248,7 +248,7 @@ class TestOrderManagementTools:
 
         # Create a test order first
         create_result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="BUY",
             price=0.01,
             size=TEST_ORDER_SIZE,
@@ -260,7 +260,7 @@ class TestOrderManagementTools:
 
             # Cancel all orders in this market
             result = await trading_tools.cancel_market_orders(
-                market_id=TEST_MARKET_ID
+                condition_id=TEST_MARKET_ID
             )
 
             print(f"Cancelled market orders: {result}")
@@ -297,7 +297,7 @@ class TestRebalanceTools:
 
         # Test rebalancing (will likely show no position to rebalance)
         result = await trading_tools.rebalance_position(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             target_size=0.0,  # Close any position
             max_slippage=0.05
         )
@@ -321,7 +321,7 @@ class TestSafetyValidation:
 
         # Try to create order exceeding max size (should fail)
         result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="BUY",
             price=0.50,
             size=999999.0,  # Way over limit
@@ -343,7 +343,7 @@ class TestSafetyValidation:
 
         # Test invalid price
         result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="BUY",
             price=1.5,  # Invalid: > 1.0
             size=TEST_ORDER_SIZE,
@@ -355,7 +355,7 @@ class TestSafetyValidation:
 
         # Test invalid side
         result = await trading_tools.create_limit_order(
-            market_id=TEST_MARKET_ID,
+            condition_id=TEST_MARKET_ID,
             side="INVALID",
             price=0.5,
             size=TEST_ORDER_SIZE,

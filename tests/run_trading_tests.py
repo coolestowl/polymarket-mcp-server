@@ -79,8 +79,8 @@ async def main():
             print("   ERROR: No suitable test market found")
             return
 
-        market_id = test_market.get('condition_id')
-        print(f"   Market ID: {market_id}")
+        condition_id = test_market.get('condition_id')
+        print(f"   Condition ID: {condition_id}")
         print(f"   Question: {test_market.get('question', 'Unknown')[:60]}...")
 
         # Test 1: Get open orders
@@ -97,7 +97,7 @@ async def main():
         # Test 3: Create and cancel small order
         print("\n8. Testing order creation and cancellation...")
         result = await trading_tools.create_limit_order(
-            market_id=market_id,
+            condition_id=condition_id,
             side="BUY",
             price=0.01,  # Very low price
             size=1.0,  # $1

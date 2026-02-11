@@ -95,7 +95,7 @@ class TradingTools:
 
     async def create_limit_order(
         self,
-        market_id: str,
+        condition_id: str,
         side: str,
         price: float,
         size: float,
@@ -108,7 +108,7 @@ class TradingTools:
         Create a limit order on Polymarket.
 
         Args:
-            market_id: Market condition ID
+            condition_id: Market condition ID (hex string, e.g., '0x...')
             side: 'BUY' or 'SELL'
             price: Limit price (0.00-1.00)
             size: Order size in USD
@@ -145,13 +145,13 @@ class TradingTools:
                 raise ValueError("GTD orders require expiration timestamp")
 
             # Get market data
-            logger.info(f"Fetching market data for {market_id}")
-            market = await self.client.get_market(market_id)
+            logger.info(f"Fetching market data for {condition_id}")
+            market = await self.client.get_market(condition_id)
 
             # Get token ID with proper selection for binary and multi-outcome markets
             tokens = market.get('tokens', [])
             if not tokens:
-                raise ValueError(f"No tokens found for market {market_id}")
+                raise ValueError(f"No tokens found for market {condition_id}")
 
             # If token_id not explicitly provided, select based on market type and outcome
             if not token_id:
@@ -159,7 +159,7 @@ class TradingTools:
 
             # Validate token_id exists in market
             if not any(t.get('token_id') == token_id for t in tokens):
-                raise ValueError(f"Token ID {token_id} not found in market {market_id}")
+                raise ValueError(f"Token ID {token_id} not found in market {condition_id}")
 
             # Get orderbook for validation
             orderbook = await self.client.get_orderbook(token_id)
@@ -183,7 +183,7 @@ class TradingTools:
             price = self._round_to_tick_size(price, tick_size)
 
             market_data = MarketData(
-                market_id=market_id,
+                market_id=condition_id,
                 token_id=token_id,
                 best_bid=best_bid,
                 best_ask=best_ask,
@@ -205,7 +205,7 @@ class TradingTools:
                 price=price,
                 size=size_in_shares,
                 side=side,
-                market_id=market_id
+                market_id=condition_id
             )
 
             # Safety validation
@@ -250,7 +250,7 @@ class TradingTools:
                 "order_id": order_response.get('orderID'),
                 "status": order_response.get('status', 'submitted'),
                 "details": {
-                    "market_id": market_id,
+                    "condition_id": condition_id,
                     "token_id": token_id,
                     "side": side,
                     "price": price,
@@ -271,7 +271,7 @@ class TradingTools:
                 "success": False,
                 "error": str(e),
                 "details": {
-                    "market_id": market_id,
+                    "condition_id": condition_id,
                     "side": side,
                     "price": price,
                     "size_usd": size
@@ -280,7 +280,7 @@ class TradingTools:
 
     async def create_market_order(
         self,
-        market_id: str,
+        condition_id: str,
         side: str,
         size: float,
         token_id: Optional[str] = None,
@@ -294,7 +294,7 @@ class TradingTools:
         guarantees either full execution or complete cancellation.
 
         Args:
-            market_id: Market condition ID
+            condition_id: Market condition ID (hex string, e.g., '0x...')
             side: 'BUY' or 'SELL'
             size: Order size in USD
             token_id: Specific token ID to trade (optional)
@@ -315,7 +315,7 @@ class TradingTools:
 
             # Use FOK (Fill-Or-Kill) for market orders
             result = await self.create_limit_order(
-                market_id=market_id,
+                condition_id=condition_id,
                 side=side,
                 price=price,
                 size=size,
@@ -335,7 +335,7 @@ class TradingTools:
                 "error": str(e),
                 "execution_type": "market_order",
                 "details": {
-                    "market_id": market_id,
+                    "condition_id": condition_id,
                     "side": side,
                     "size_usd": size
                 }
@@ -350,7 +350,7 @@ class TradingTools:
 
         Args:
             orders: List of order objects with fields:
-                - market_id (str)
+                - condition_id (str): Market condition ID
                 - side (str)
                 - price (float)
                 - size (float)
@@ -361,7 +361,7 @@ class TradingTools:
             Dict with results for each order
         """
         try:
-            
+
             results = []
             successful = 0
             failed = 0
@@ -372,7 +372,7 @@ class TradingTools:
             for idx, order in enumerate(orders):
                 try:
                     result = await self.create_limit_order(
-                        market_id=order['market_id'],
+                        condition_id=order['condition_id'],
                         side=order['side'],
                         price=order['price'],
                         size=order['size'],
@@ -493,20 +493,20 @@ class TradingTools:
 
     async def get_open_orders(
         self,
-        market_id: Optional[str] = None
+        condition_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get all active/open orders.
 
         Args:
-            market_id: Optional market filter
+            condition_id: Optional market condition ID filter
 
         Returns:
             Dict with list of open orders
         """
         try:
 
-            orders = await self.client.get_orders(market=market_id)
+            orders = await self.client.get_orders(market=condition_id)
 
             # Filter for open orders only (status can be uppercase or lowercase)
             open_orders = [
@@ -539,7 +539,7 @@ class TradingTools:
 
     async def get_order_history(
         self,
-        market_id: Optional[str] = None,
+        condition_id: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: int = 100
@@ -548,7 +548,7 @@ class TradingTools:
         Get historical orders.
 
         Args:
-            market_id: Optional market filter
+            condition_id: Optional market condition ID filter
             start_date: Start date (ISO format)
             end_date: End date (ISO format)
             limit: Maximum number of orders (default 100)
@@ -557,8 +557,8 @@ class TradingTools:
             Dict with order history
         """
         try:
-            
-            orders = await self.client.get_orders(market=market_id)
+
+            orders = await self.client.get_orders(market=condition_id)
 
             # Filter by date if provided
             if start_date or end_date:
@@ -644,7 +644,7 @@ class TradingTools:
 
     async def cancel_market_orders(
         self,
-        market_id: str,
+        condition_id: str,
         asset_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -653,7 +653,7 @@ class TradingTools:
         Uses the SDK's cancel_market_orders method for efficient batch cancellation.
 
         Args:
-            market_id: Market condition ID
+            condition_id: Market condition ID (hex string, e.g., '0x...')
             asset_id: Optional asset/token filter
 
         Returns:
@@ -662,7 +662,7 @@ class TradingTools:
         try:
             # Use SDK's batch cancel method for efficiency
             response = await self.client.cancel_market_orders(
-                market=market_id,
+                market=condition_id,
                 asset_id=asset_id or ""
             )
 
@@ -675,7 +675,7 @@ class TradingTools:
 
             return {
                 "success": True,
-                "market_id": market_id,
+                "condition_id": condition_id,
                 "asset_id": asset_id,
                 "cancelled_count": cancelled_count,
                 "response": response,
@@ -687,7 +687,7 @@ class TradingTools:
             return {
                 "success": False,
                 "error": str(e),
-                "market_id": market_id
+                "condition_id": condition_id
             }
 
     async def cancel_all_orders(self) -> Dict[str, Any]:
@@ -724,7 +724,7 @@ class TradingTools:
 
     async def rebalance_position(
         self,
-        market_id: str,
+        condition_id: str,
         target_size: Optional[float] = None,
         max_slippage: float = 0.02,
         token_id: Optional[str] = None,
@@ -734,7 +734,7 @@ class TradingTools:
         Adjust position to target size (or close if target_size is None).
 
         Args:
-            market_id: Market condition ID
+            condition_id: Market condition ID (hex string, e.g., '0x...')
             target_size: Target position size in USD (None to close)
             max_slippage: Maximum acceptable slippage (default 2%)
             token_id: Specific token ID (optional)
@@ -744,7 +744,7 @@ class TradingTools:
             Dict with rebalance summary
         """
         try:
-            logger.info(f"Rebalancing position in market {market_id} to target ${target_size}")
+            logger.info(f"Rebalancing position in market {condition_id} to target ${target_size}")
 
             # Get current position
             positions_data = await self.client.get_positions()
@@ -753,7 +753,7 @@ class TradingTools:
             current_position = None
 
             for pos in positions_data:
-                if pos.get('market') == market_id or pos.get('condition_id') == market_id:
+                if pos.get('market') == condition_id or pos.get('condition_id') == condition_id:
                     current_size += float(pos.get('size', 0)) * float(pos.get('price', 0))
                     current_position = pos
 
@@ -783,10 +783,10 @@ class TradingTools:
                 size = abs(adjustment)
 
             # Get market data for slippage check
-            market = await self.client.get_market(market_id)
+            market = await self.client.get_market(condition_id)
             tokens = market.get('tokens', [])
             if not tokens:
-                raise ValueError(f"No tokens found for market {market_id}")
+                raise ValueError(f"No tokens found for market {condition_id}")
 
             # Select token ID if not provided
             if not token_id:
@@ -826,7 +826,7 @@ class TradingTools:
             logger.info(f"Rebalancing: {side} ${size} @ ~{expected_price:.4f}")
 
             result = await self.create_limit_order(
-                market_id=market_id,
+                condition_id=condition_id,
                 side=side,
                 price=expected_price,
                 size=size,
@@ -853,7 +853,7 @@ class TradingTools:
             return {
                 "success": False,
                 "error": str(e),
-                "market_id": market_id,
+                "condition_id": condition_id,
                 "target_size": target_size
             }
 
@@ -1020,9 +1020,9 @@ def get_tool_definitions() -> List[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Market condition ID"
+                        "description": "Market condition ID (hex string from CLOB API, e.g., '0x...')"
                     },
                     "side": {
                         "type": "string",
@@ -1059,7 +1059,7 @@ def get_tool_definitions() -> List[types.Tool]:
                         "description": "Outcome name/index for multi-outcome markets (required for >2 outcomes, e.g., 'Candidate A', '0', '1')"
                     }
                 },
-                "required": ["market_id", "side", "price", "size"]
+                "required": ["condition_id", "side", "price", "size"]
             }
         ),
         types.Tool(
@@ -1072,9 +1072,9 @@ def get_tool_definitions() -> List[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Market condition ID"
+                        "description": "Market condition ID (hex string from CLOB API, e.g., '0x...')"
                     },
                     "side": {
                         "type": "string",
@@ -1095,7 +1095,7 @@ def get_tool_definitions() -> List[types.Tool]:
                         "description": "Outcome name/index for multi-outcome markets (optional)"
                     }
                 },
-                "required": ["market_id", "side", "size"]
+                "required": ["condition_id", "side", "size"]
             }
         ),
         types.Tool(
@@ -1113,14 +1113,14 @@ def get_tool_definitions() -> List[types.Tool]:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "market_id": {"type": "string"},
+                                "condition_id": {"type": "string", "description": "Market condition ID"},
                                 "side": {"type": "string", "enum": ["BUY", "SELL"]},
                                 "price": {"type": "number"},
                                 "size": {"type": "number"},
                                 "order_type": {"type": "string"},
                                 "expiration": {"type": "integer"}
                             },
-                            "required": ["market_id", "side", "price", "size"]
+                            "required": ["condition_id", "side", "price", "size"]
                         },
                         "description": "List of orders to submit"
                     }
@@ -1146,13 +1146,13 @@ def get_tool_definitions() -> List[types.Tool]:
         ),
         types.Tool(
             name="get_open_orders",
-            description="Get all active/open orders, optionally filtered by market.",
+            description="Get all active/open orders, optionally filtered by market condition ID.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Optional market filter"
+                        "description": "Optional market condition ID filter"
                     }
                 }
             }
@@ -1163,9 +1163,9 @@ def get_tool_definitions() -> List[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Optional market filter"
+                        "description": "Optional market condition ID filter"
                     },
                     "start_date": {
                         "type": "string",
@@ -1203,16 +1203,16 @@ def get_tool_definitions() -> List[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Market condition ID"
+                        "description": "Market condition ID (hex string from CLOB API)"
                     },
                     "asset_id": {
                         "type": "string",
                         "description": "Optional asset/token filter"
                     }
                 },
-                "required": ["market_id"]
+                "required": ["condition_id"]
             }
         ),
         types.Tool(
@@ -1234,9 +1234,9 @@ def get_tool_definitions() -> List[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "market_id": {
+                    "condition_id": {
                         "type": "string",
-                        "description": "Market condition ID"
+                        "description": "Market condition ID (hex string from CLOB API)"
                     },
                     "target_size": {
                         "type": "number",
@@ -1248,7 +1248,7 @@ def get_tool_definitions() -> List[types.Tool]:
                         "description": "Maximum acceptable slippage (0.02 = 2%)"
                     }
                 },
-                "required": ["market_id"]
+                "required": ["condition_id"]
             }
         ),
     ]
