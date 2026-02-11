@@ -196,8 +196,14 @@ class TradingTools:
             positions_data = await self.client.get_positions()
             positions = self._convert_positions(positions_data)
 
-            # Convert size from USD to shares
-            size_in_shares = size / price
+            # Convert size from USD to shares using best available price
+            # BUY: use best_ask to calculate shares (what we'd pay at market)
+            # SELL: use best_bid to calculate shares (what we'd receive at market)
+            if side == 'BUY':
+                reference_price = best_ask if best_ask > 0 else price
+            else:
+                reference_price = best_bid if best_bid > 0 else price
+            size_in_shares = size / reference_price
 
             # Create order request for validation
             order_request = OrderRequest(
@@ -233,7 +239,7 @@ class TradingTools:
             # Post order
             logger.info(
                 f"Posting limit order: {side} {size_in_shares:.2f} shares @ {price} "
-                f"({order_type})"
+                f"({order_type}), reference_price={reference_price}"
             )
 
             order_response = await self.client.post_order(
@@ -254,6 +260,7 @@ class TradingTools:
                     "token_id": token_id,
                     "side": side,
                     "price": price,
+                    "reference_price": reference_price,
                     "size_shares": size_in_shares,
                     "size_usd": size,
                     "order_type": order_type,
@@ -310,16 +317,17 @@ class TradingTools:
             price = 0.99 if side_upper == 'BUY' else 0.01
 
             logger.info(
-                f"Executing market order: {side} ${size} @ market price (FOK)"
+                f"Executing market order: {side} ${size} @ market price (FAK)"
             )
 
-            # Use FOK (Fill-Or-Kill) for market orders
+            # Use FAK (Fill-And-Kill) for market orders
+            # FAK fills as much as possible immediately and cancels the rest
             result = await self.create_limit_order(
                 condition_id=condition_id,
                 side=side,
                 price=price,
                 size=size,
-                order_type='FOK',
+                order_type='FAK',
                 token_id=token_id,
                 outcome=outcome
             )
