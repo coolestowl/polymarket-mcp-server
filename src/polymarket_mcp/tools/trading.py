@@ -203,7 +203,11 @@ class TradingTools:
                 reference_price = best_ask if best_ask > 0 else price
             else:
                 reference_price = best_bid if best_bid > 0 else price
-            size_in_shares = size / reference_price
+
+            # Round size_in_shares to 2 decimal places
+            # Polymarket API requires: maker_amount max 2 decimals, taker_amount max 4 decimals
+            # For simplicity, we use 2 decimals for shares which satisfies both constraints
+            size_in_shares = round(size / reference_price, 2)
 
             # Create order request for validation
             order_request = OrderRequest(
