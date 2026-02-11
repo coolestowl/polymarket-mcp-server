@@ -43,32 +43,27 @@ The first public release of Polymarket MCP Server - a complete AI-powered tradin
 - `get_liquidity` - Available liquidity in USD
 - `get_price_history` - Historical price data
 - `get_market_holders` - Top position holders
-- `analyze_market_opportunity` - AI-powered analysis with recommendations
 - `compare_markets` - Compare multiple markets side-by-side
 
-#### Trading Tools (12 tools)
+#### Trading Tools (10 tools)
 - `create_limit_order` - Create limit orders (GTC/GTD/FOK/FAK)
 - `create_market_order` - Execute market orders
 - `create_batch_orders` - Submit multiple orders efficiently
-- `suggest_order_price` - AI-suggested optimal pricing
 - `get_order_status` - Check specific order status
 - `get_open_orders` - List all active orders
 - `get_order_history` - Historical order data
 - `cancel_order` - Cancel specific order
 - `cancel_market_orders` - Cancel all orders in a market
 - `cancel_all_orders` - Emergency cancel all orders
-- `execute_smart_trade` - Natural language trading with intent parsing
 - `rebalance_position` - Auto-adjust position to target size
 
-#### Portfolio Management Tools (8 tools)
+#### Portfolio Management Tools (6 tools)
 - `get_all_positions` - All user positions with filters
 - `get_position_details` - Detailed position view
 - `get_portfolio_value` - Total portfolio value calculation
 - `get_pnl_summary` - Profit/loss overview
 - `get_trade_history` - Historical trades with filters
 - `get_activity_log` - On-chain activity tracking
-- `analyze_portfolio_risk` - Risk assessment and scoring
-- `suggest_portfolio_actions` - AI-powered optimization suggestions
 
 #### Real-time Monitoring Tools (7 tools)
 - `subscribe_market_prices` - Monitor price changes via WebSocket

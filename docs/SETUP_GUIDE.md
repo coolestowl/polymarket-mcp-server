@@ -236,7 +236,7 @@ Com o MCP configurado, você pode pedir para Claude:
 ### 💼 Trading
 - "Compre $100 de YES no market X"
 - "Cancele todas minhas ordens"
-- "Execute um smart trade de $500 em Y"
+- "Rebalance minha posição em Y para $500"
 
 ### 📊 Portfolio
 - "Mostre minhas posições"

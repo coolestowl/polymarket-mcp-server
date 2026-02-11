@@ -488,11 +488,7 @@ Buy $400 of YES tokens in [market]
    - Placing multiple orders at once
    - Order strategies
 
-2. **Smart Trade Execution** (60 seconds)
-   - AI-suggested pricing
-   - Aggressive/passive/mid strategies
-
-3. **Portfolio Rebalancing** (60 seconds)
+2. **Portfolio Rebalancing** (60 seconds)
    - Automated rebalancing
    - Slippage protection
 

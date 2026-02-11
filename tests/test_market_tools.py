@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 from polymarket_mcp.tools import market_discovery, market_analysis
-from polymarket_mcp.tools.market_analysis import PriceData, OrderBook, VolumeData, MarketOpportunity
+from polymarket_mcp.tools.market_analysis import PriceData, OrderBook, VolumeData
 
 
 class TestMarketDiscovery:
@@ -340,31 +340,6 @@ class TestMarketAnalysis:
                 print(f"Holders response: {holders}")
 
     @pytest.mark.asyncio
-    async def test_analyze_market_opportunity(self):
-        """Test AI-powered market analysis"""
-        markets = await market_discovery.get_trending_markets(limit=1)
-
-        if len(markets) > 0:
-            market = markets[0]
-            market_id = market.get("id") or market.get("market_id")
-
-            if market_id:
-                analysis = await market_analysis.analyze_market_opportunity(market_id=market_id)
-
-                assert isinstance(analysis, MarketOpportunity)
-                assert analysis.market_id == market_id
-                assert analysis.recommendation in ["BUY", "SELL", "HOLD", "AVOID"]
-                assert analysis.risk_assessment in ["low", "medium", "high"]
-                assert 0 <= analysis.confidence_score <= 100
-
-                print(f"\nMarket Analysis:")
-                print(f"  Market: {analysis.market_question}")
-                print(f"  Recommendation: {analysis.recommendation}")
-                print(f"  Confidence: {analysis.confidence_score}%")
-                print(f"  Risk: {analysis.risk_assessment}")
-                print(f"  Reasoning: {analysis.reasoning}")
-
-    @pytest.mark.asyncio
     async def test_compare_markets(self):
         """Test comparing multiple markets"""
         markets = await market_discovery.get_trending_markets(limit=3)
@@ -433,18 +408,15 @@ class TestIntegration:
             details = await market_analysis.get_market_details(market_id=market_id)
             volume = await market_analysis.get_market_volume(market_id=market_id)
             liquidity = await market_analysis.get_liquidity(market_id=market_id)
-            analysis = await market_analysis.analyze_market_opportunity(market_id=market_id)
 
             # Verify all data is consistent
             assert details.get("id") == market_id or details.get("market_id") == market_id
             assert volume.market_id == market_id
             assert liquidity.get("market_id") == market_id
-            assert analysis.market_id == market_id
 
             print(f"\nComplete Market Analysis for: {details.get('question', 'Unknown')}")
             print(f"Volume 24h: ${volume.volume_24h:,.2f}")
             print(f"Liquidity: ${liquidity.get('liquidity_usd', 0):,.2f}")
-            print(f"Recommendation: {analysis.recommendation} ({analysis.confidence_score}%)")
 
     @pytest.mark.asyncio
     async def test_rate_limiting(self):

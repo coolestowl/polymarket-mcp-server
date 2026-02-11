@@ -15,8 +15,6 @@ from polymarket_mcp.tools.portfolio import (
     get_pnl_summary,
     get_trade_history,
     get_activity_log,
-    analyze_portfolio_risk,
-    suggest_portfolio_actions,
     PORTFOLIO_TOOLS
 )
 from polymarket_mcp.config import PolymarketConfig
@@ -101,9 +99,7 @@ class TestToolDefinitions:
             'get_portfolio_value',
             'get_pnl_summary',
             'get_trade_history',
-            'get_activity_log',
-            'analyze_portfolio_risk',
-            'suggest_portfolio_actions'
+            'get_activity_log'
         ]
 
         actual_names = [tool['name'] for tool in PORTFOLIO_TOOLS]
@@ -350,73 +346,6 @@ class TestActivityTools:
 
         assert len(result) == 1
         assert "Activity Log" in result[0].text
-
-
-class TestAnalysisTools:
-    """Test portfolio analysis tools"""
-
-    @pytest.mark.asyncio
-    async def test_analyze_portfolio_risk(self, mock_polymarket_client, mock_rate_limiter, mock_config, httpx_mock):
-        """Test portfolio risk analysis"""
-        httpx_mock.add_response(
-            url="https://data-api.polymarket.com/positions",
-            json=[
-                {
-                    'asset': 'token_123',
-                    'conditionId': 'market_123',
-                    'title': 'Test Market 1',
-                    'outcome': 'Yes',
-                    'size': '100',
-                    'avgPrice': '0.50'
-                },
-                {
-                    'asset': 'token_456',
-                    'conditionId': 'market_456',
-                    'title': 'Test Market 2',
-                    'outcome': 'No',
-                    'size': '50',
-                    'avgPrice': '0.60'
-                }
-            ]
-        )
-
-        result = await analyze_portfolio_risk(
-            mock_polymarket_client,
-            mock_rate_limiter,
-            mock_config
-        )
-
-        assert len(result) == 1
-        assert "Portfolio Risk Analysis" in result[0].text
-        assert "Risk Score" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_suggest_portfolio_actions(self, mock_polymarket_client, mock_rate_limiter, mock_config, httpx_mock):
-        """Test portfolio optimization suggestions"""
-        httpx_mock.add_response(
-            url="https://data-api.polymarket.com/positions",
-            json=[
-                {
-                    'asset': 'token_123',
-                    'conditionId': 'market_123',
-                    'title': 'Test Market',
-                    'outcome': 'Yes',
-                    'size': '100',
-                    'avgPrice': '0.30'
-                }
-            ]
-        )
-
-        result = await suggest_portfolio_actions(
-            mock_polymarket_client,
-            mock_rate_limiter,
-            mock_config,
-            goal='balanced',
-            max_actions=5
-        )
-
-        assert len(result) == 1
-        assert "Portfolio Optimization Suggestions" in result[0].text
 
 
 class TestErrorHandling:

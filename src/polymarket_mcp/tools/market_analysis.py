@@ -1,7 +1,7 @@
 """
 Market Analysis Tools for Polymarket MCP Server.
 
-Provides 9 tools for analyzing markets:
+Provides 8 tools for analyzing markets:
 - get_market_details: Complete market information
 - get_current_price: Current bid/ask prices
 - get_orderbook: Complete order book
@@ -9,7 +9,6 @@ Provides 9 tools for analyzing markets:
 - get_market_volume: Volume statistics
 - get_liquidity: Available liquidity
 - get_price_history: Historical price data
-- analyze_market_opportunity: AI-powered analysis
 - compare_markets: Compare multiple markets
 """
 import json
@@ -436,124 +435,6 @@ async def get_market_holders(
         raise
 
 
-async def analyze_market_opportunity(market_id) -> MarketOpportunity:
-    """
-    AI-powered market analysis.
-
-    Args:
-        market_id: Market ID (string or integer)
-
-    Returns:
-        Complete analysis with recommendation
-    """
-    try:
-        market_id = str(market_id)  # Convert to string for API compatibility
-        # Get comprehensive market data
-        market_details = await get_market_details(market_id=market_id)
-
-        # Get volume and liquidity
-        volume_data = await get_market_volume(market_id)
-        liquidity_data = await get_liquidity(market_id)
-
-        # Get current prices for tokens
-        tokens = market_details.get("tokens", [])
-        token_prices = {}
-
-        if len(tokens) >= 2:
-            # Get YES and NO token prices
-            yes_token = tokens[0]
-            no_token = tokens[1]
-
-            try:
-                yes_price = await get_current_price(yes_token.get("token_id"), "BOTH")
-                no_price = await get_current_price(no_token.get("token_id"), "BOTH")
-
-                token_prices["yes"] = yes_price.mid
-                token_prices["no"] = no_price.mid
-
-                # Calculate spread
-                if yes_price.bid and yes_price.ask:
-                    spread_value = yes_price.ask - yes_price.bid
-                    spread_pct = (spread_value / yes_price.mid) * 100 if yes_price.mid else 0
-                else:
-                    spread_value = None
-                    spread_pct = None
-
-            except Exception as price_error:
-                logger.warning(f"Could not fetch token prices: {price_error}")
-                spread_value = None
-                spread_pct = None
-        else:
-            spread_value = None
-            spread_pct = None
-
-        # Analyze market conditions
-        liquidity_usd = liquidity_data.get("liquidity_usd", 0)
-        volume_24h = volume_data.volume_24h or 0
-
-        # Risk assessment
-        if liquidity_usd < 10000:
-            risk = "high"
-            risk_reason = "Low liquidity"
-        elif spread_pct and spread_pct > 5:
-            risk = "high"
-            risk_reason = "High spread"
-        elif volume_24h < 1000:
-            risk = "medium"
-            risk_reason = "Low trading volume"
-        else:
-            risk = "low"
-            risk_reason = "Good liquidity and volume"
-
-        # Generate recommendation
-        if risk == "high":
-            recommendation = "AVOID"
-            confidence = 30
-            reasoning = f"Risk assessment: {risk_reason}. Market conditions not favorable for trading."
-        elif liquidity_usd > 50000 and volume_24h > 10000:
-            recommendation = "HOLD"
-            confidence = 70
-            reasoning = f"Healthy market with good liquidity (${liquidity_usd:,.0f}) and volume (${volume_24h:,.0f})."
-        elif spread_pct and spread_pct < 2:
-            recommendation = "BUY"
-            confidence = 65
-            reasoning = f"Tight spread ({spread_pct:.2f}%) indicates efficient market. Good entry opportunity."
-        else:
-            recommendation = "HOLD"
-            confidence = 50
-            reasoning = "Market conditions are acceptable but not optimal. Monitor for better entry points."
-
-        # Price trend (simplified)
-        price_trend = "stable"  # Would need historical data for accurate trend
-
-        opportunity = MarketOpportunity(
-            market_id=market_id,
-            market_question=market_details.get("question", "Unknown"),
-            current_price_yes=token_prices.get("yes"),
-            current_price_no=token_prices.get("no"),
-            spread=spread_value,
-            spread_pct=spread_pct,
-            volume_24h=volume_24h,
-            liquidity_usd=liquidity_usd,
-            price_trend_24h=price_trend,
-            risk_assessment=risk,
-            recommendation=recommendation,
-            confidence_score=confidence,
-            reasoning=reasoning
-        )
-
-        logger.info(
-            f"Analysis for {market_id}: {recommendation} "
-            f"(confidence: {confidence}%, risk: {risk})"
-        )
-
-        return opportunity
-
-    except Exception as e:
-        logger.error(f"Failed to analyze market opportunity: {e}")
-        raise
-
-
 async def compare_markets(market_ids: List) -> List[Dict[str, Any]]:
     """
     Compare multiple markets.
@@ -758,20 +639,6 @@ def get_tools() -> List[types.Tool]:
             }
         ),
         types.Tool(
-            name="analyze_market_opportunity",
-            description="AI-powered market analysis with trading recommendation, risk assessment, and confidence score.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "market_id": {
-                        "type": ["string", "integer"],
-                        "description": "Market ID to analyze"
-                    }
-                },
-                "required": ["market_id"]
-            }
-        ),
-        types.Tool(
             name="compare_markets",
             description="Compare multiple markets side-by-side with key metrics (volume, liquidity, etc.).",
             inputSchema={
@@ -820,9 +687,6 @@ async def handle_tool(name: str, arguments: Dict[str, Any]) -> List[types.TextCo
             result = await get_liquidity(**arguments)
         elif name == "get_price_history":
             result = await get_price_history(**arguments)
-        elif name == "analyze_market_opportunity":
-            result = await analyze_market_opportunity(**arguments)
-            result = result.model_dump(mode='json')
         elif name == "compare_markets":
             result = await compare_markets(**arguments)
         else:

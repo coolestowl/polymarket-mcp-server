@@ -89,53 +89,7 @@ async def setup():
 
 @pytest.mark.asyncio
 class TestOrderCreationTools:
-    """Test Order Creation tools (4 tools)"""
-
-    async def test_suggest_order_price(self, setup):
-        """Test price suggestion tool"""
-        print("\n--- Testing suggest_order_price ---")
-
-        trading_tools = setup["trading_tools"]
-
-        # Test aggressive buy
-        result = await trading_tools.suggest_order_price(
-            market_id=TEST_MARKET_ID,
-            side="BUY",
-            size=TEST_ORDER_SIZE,
-            strategy="aggressive"
-        )
-
-        print(f"Aggressive buy suggestion: {result}")
-        assert result["success"] is True
-        assert "suggested_price" in result
-        assert 0 < result["suggested_price"] <= 1.0
-        assert result["strategy"] == "aggressive"
-
-        # Test passive sell
-        result = await trading_tools.suggest_order_price(
-            market_id=TEST_MARKET_ID,
-            side="SELL",
-            size=TEST_ORDER_SIZE,
-            strategy="passive"
-        )
-
-        print(f"Passive sell suggestion: {result}")
-        assert result["success"] is True
-        assert result["strategy"] == "passive"
-
-        # Test mid strategy
-        result = await trading_tools.suggest_order_price(
-            market_id=TEST_MARKET_ID,
-            side="BUY",
-            size=TEST_ORDER_SIZE,
-            strategy="mid"
-        )
-
-        print(f"Mid strategy suggestion: {result}")
-        assert result["success"] is True
-        assert result["strategy"] == "mid"
-
-        print("suggest_order_price test PASSED")
+    """Test Order Creation tools (3 tools)"""
 
     async def test_create_limit_order(self, setup):
         """Test limit order creation"""
@@ -169,20 +123,8 @@ class TestOrderCreationTools:
         print("create_limit_order test PASSED")
 
     async def test_create_market_order_simulation(self, setup):
-        """Test market order (simulation - gets price but doesn't execute)"""
+        """Test market order (simulation - doesn't execute to avoid immediate fills)"""
         print("\n--- Testing create_market_order (simulation) ---")
-
-        trading_tools = setup["trading_tools"]
-
-        # Get current market price
-        suggestion = await trading_tools.suggest_order_price(
-            market_id=TEST_MARKET_ID,
-            side="BUY",
-            size=TEST_ORDER_SIZE,
-            strategy="aggressive"
-        )
-
-        print(f"Market price for BUY: {suggestion['suggested_price']:.4f}")
 
         # Note: We don't actually execute market orders in tests to avoid
         # immediate fills. In production, create_market_order would execute.
@@ -344,32 +286,8 @@ class TestOrderManagementTools:
 
 
 @pytest.mark.asyncio
-class TestSmartTradingTools:
-    """Test Smart Trading tools (2 tools)"""
-
-    async def test_execute_smart_trade(self, setup):
-        """Test AI-powered smart trade execution"""
-        print("\n--- Testing execute_smart_trade ---")
-
-        trading_tools = setup["trading_tools"]
-
-        # Test with conservative intent
-        result = await trading_tools.execute_smart_trade(
-            market_id=TEST_MARKET_ID,
-            intent="Buy YES at a good price, be patient",
-            max_budget=TEST_ORDER_SIZE * 2
-        )
-
-        print(f"Smart trade result: {result}")
-        assert result["success"] is True
-        assert "execution_summary" in result
-        assert "strategy" in result
-
-        # Cleanup
-        await asyncio.sleep(2)
-        await trading_tools.cancel_all_orders()
-
-        print("execute_smart_trade test PASSED")
+class TestRebalanceTools:
+    """Test Rebalance tools"""
 
     async def test_rebalance_position(self, setup):
         """Test position rebalancing"""

@@ -30,7 +30,6 @@
 │  │  │  • create_limit_order                                │ │  │
 │  │  │  • create_market_order                               │ │  │
 │  │  │  • create_batch_orders                               │ │  │
-│  │  │  • suggest_order_price                               │ │  │
 │  │  └──────────────────────────────────────────────────────┘ │  │
 │  │  ┌──────────────────────────────────────────────────────┐ │  │
 │  │  │        Order Management (6 tools)                    │ │  │
@@ -42,8 +41,7 @@
 │  │  │  • cancel_all_orders                                 │ │  │
 │  │  └──────────────────────────────────────────────────────┘ │  │
 │  │  ┌──────────────────────────────────────────────────────┐ │  │
-│  │  │         Smart Trading (2 tools)                      │ │  │
-│  │  │  • execute_smart_trade (AI-powered)                  │ │  │
+│  │  │         Position Rebalancing (1 tool)                │ │  │
 │  │  │  • rebalance_position                                │ │  │
 │  │  └──────────────────────────────────────────────────────┘ │  │
 │  └──────────┬───────────────────┬─────────────────┬───────────┘  │
@@ -182,57 +180,6 @@
   └─────────────────┘
 ```
 
-## Smart Trade Execution Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ execute_smart_trade(market_id, intent, max_budget)              │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│ 1. Parse Intent                                                  │
-│    Intent: "Buy YES quickly up to $200"                         │
-│    → side: BUY                                                   │
-│    → strategy: aggressive (keywords: "quickly")                 │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│ 2. Get Price Suggestion                                          │
-│    suggest_order_price(market_id, BUY, size, "aggressive")     │
-│    → suggested_price: 0.58 (best ask)                           │
-│    → fill_probability: 0.95                                     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│ 3. Determine Execution Strategy                                  │
-│    IF fill_probability > 0.8 OR strategy == "aggressive":       │
-│        → Single market order                                     │
-│    ELSE:                                                         │
-│        → Split into multiple limit orders                       │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│ 4. Execute Orders                                                │
-│    Plan: Single market order for $200                           │
-│    → create_market_order(market_id, BUY, 200)                   │
-│       → Executes at best ask 0.58                               │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│ 5. Return Execution Summary                                      │
-│    {                                                             │
-│      "success": true,                                            │
-│      "strategy": "aggressive",                                   │
-│      "execution_summary": {                                      │
-│        "total_orders": 1,                                        │
-│        "successful": 1,                                          │
-│        "total_value": 200,                                       │
-│        "budget_used": 100%                                       │
-│      }                                                            │
-│    }                                                             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
 ## Rate Limiting Architecture
 
 ```
@@ -351,10 +298,8 @@ async def tool_method(params):
 |------------------------|-----------|-----------------|--------------------------|
 | create_limit_order     | 200-500ms | 2400/10s burst  | Includes validation      |
 | create_market_order    | 200-500ms | 2400/10s burst  | FOK execution            |
-| suggest_order_price    | 100-200ms | 200/10s         | Orderbook fetch          |
 | get_open_orders        | 100-300ms | 5000/10s        | Cached on server         |
 | cancel_order           | 100-200ms | 2400/10s burst  | Quick cancellation       |
-| execute_smart_trade    | 500-1500ms| 2400/10s burst  | Multi-step analysis      |
 | rebalance_position     | 300-800ms | 2400/10s burst  | Position calculation     |
 
 ## Testing Strategy

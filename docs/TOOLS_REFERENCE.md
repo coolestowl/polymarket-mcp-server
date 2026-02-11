@@ -2,14 +2,13 @@
 
 ## Complete Tool Inventory (30 Tools)
 
-### Phase 1: Trading Tools (12 tools) ✅
+### Phase 1: Trading Tools (10 tools) ✅
 Previously implemented by other agents.
 
-#### Order Creation (4 tools)
+#### Order Creation (3 tools)
 - `create_limit_order` - Create limit order with specified price
 - `create_market_order` - Create market order at best price
 - `create_batch_orders` - Create multiple orders in one transaction
-- `suggest_order_price` - Get AI-suggested optimal order price
 
 #### Order Management (6 tools)
 - `get_order_status` - Get status of specific order
@@ -19,8 +18,7 @@ Previously implemented by other agents.
 - `cancel_market_orders` - Cancel all orders for a market
 - `cancel_all_orders` - Cancel all open orders
 
-#### Smart Trading (2 tools)
-- `execute_smart_trade` - AI-optimized trade execution
+#### Position Rebalancing (1 tool)
 - `rebalance_position` - Rebalance position to target allocation
 
 ---
@@ -296,39 +294,7 @@ Get historical price data. **Note**: Limited availability via public API.
 ```
 Get top position holders. **Note**: Requires authenticated access.
 
-**9. analyze_market_opportunity** 🤖 AI-Powered
-```json
-{
-  "name": "analyze_market_opportunity",
-  "parameters": {
-    "market_id": "string (required)"
-  },
-  "returns": "MarketOpportunity"
-}
-```
-AI-powered comprehensive market analysis with trading recommendation.
-
-**Response Schema (MarketOpportunity)**:
-```json
-{
-  "market_id": "string",
-  "market_question": "string",
-  "current_price_yes": "float",
-  "current_price_no": "float",
-  "spread": "float",
-  "spread_pct": "float",
-  "volume_24h": "float",
-  "liquidity_usd": "float",
-  "price_trend_24h": "enum['up', 'down', 'stable']",
-  "risk_assessment": "enum['low', 'medium', 'high']",
-  "recommendation": "enum['BUY', 'SELL', 'HOLD', 'AVOID']",
-  "confidence_score": "float (0-100)",
-  "reasoning": "string",
-  "last_updated": "datetime"
-}
-```
-
-**10. compare_markets**
+**9. compare_markets**
 ```json
 {
   "name": "compare_markets",
@@ -365,9 +331,9 @@ Compare multiple markets side-by-side.
    - get_market_details()
    - get_current_price()
    - get_market_volume()
-   - analyze_market_opportunity()
-3. Filter by recommendation == "BUY" and confidence > 70
-4. execute_smart_trade() (trading tool)
+   - get_liquidity()
+3. Filter by volume and liquidity criteria
+4. create_limit_order() or create_market_order() (trading tools)
 ```
 
 ### Workflow 2: Market Analysis
@@ -377,7 +343,6 @@ Compare multiple markets side-by-side.
 3. get_orderbook(token_id)
 4. get_spread(token_id)
 5. get_liquidity(market_id)
-6. analyze_market_opportunity(market_id)
 ```
 
 ### Workflow 3: Market Comparison
@@ -393,7 +358,8 @@ Compare multiple markets side-by-side.
 ```
 1. get_closing_soon_markets(hours=24)
 2. For each market:
-   - analyze_market_opportunity()
+   - get_market_details()
+   - get_liquidity()
    - Check if current position exists
    - Decide to enter/exit before closing
 ```
@@ -437,7 +403,7 @@ Common errors:
 
 1. **Rate Limiting**: Don't make more than recommended requests
 2. **Error Handling**: Always check for error field in response
-3. **Market Selection**: Use analyze_market_opportunity for decision making
+3. **Market Selection**: Use get_market_details and get_liquidity for decision making
 4. **Liquidity Check**: Verify liquidity > $10k before trading
 5. **Spread Check**: Avoid markets with spread > 5%
 6. **Volume Check**: Prefer markets with volume_24h > $1k
@@ -452,12 +418,12 @@ Common errors:
 markets = await get_trending_markets(limit=1)
 market_id = markets[0]["id"]
 
-# 2. Analyze opportunity
-analysis = await analyze_market_opportunity(market_id)
+# 2. Get market details and liquidity
+details = await get_market_details(market_id=market_id)
+liquidity = await get_liquidity(market_id=market_id)
 
-# 3. If good opportunity, get details for trading
-if analysis.recommendation == "BUY":
-    details = await get_market_details(market_id=market_id)
+# 3. If good liquidity, get price for trading
+if liquidity.get("liquidity_usd", 0) > 10000:
     token_id = details["tokens"][0]["token_id"]
     price = await get_current_price(token_id)
     # Use trading tools to execute

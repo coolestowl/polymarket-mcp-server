@@ -57,27 +57,23 @@ Powered by **[Claude Code](https://claude.ai/code)** from Anthropic
 - Risk assessment and scoring
 - Spread calculation and monitoring
 
-#### 💼 Trading (12 tools)
+#### 💼 Trading (10 tools)
 - **Limit orders** (GTC, GTD, FOK, FAK)
 - **Market orders** (immediate execution)
 - Batch order submission
-- **AI-suggested pricing** (aggressive/passive/mid strategies)
 - Order status tracking and history
 - Open orders management
 - Single and bulk order cancellation
-- **Smart trade execution** (natural language → automated strategy)
 - **Position rebalancing** with slippage protection
 - Order book integration
 
-#### 📈 Portfolio Management (8 tools)
+#### 📈 Portfolio Management (6 tools)
 - Real-time position tracking
 - P&L calculation (realized/unrealized)
 - Portfolio value aggregation
-- **Risk analysis** (concentration, liquidity, diversification)
 - Trade history with filters
 - On-chain activity log
 - Performance metrics
-- **AI-powered portfolio optimization** (conservative/balanced/aggressive)
 
 ### 🛡️ Enterprise-Grade Safety & Risk Management
 
@@ -310,7 +306,6 @@ Ask Claude:
 ```
 "Buy $100 of YES tokens in [market_id] at $0.65"
 "Place a limit order: sell 200 NO at $0.40 in [market]"
-"Execute a smart trade: buy YES up to $500 in [market] using best strategy"
 "Cancel all my open orders in the government shutdown market"
 "Rebalance my position in [market] to $1000 with max 2% slippage"
 ```

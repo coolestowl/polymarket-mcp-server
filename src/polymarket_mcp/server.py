@@ -201,13 +201,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
         # Route to market analysis tools
         elif name in ["get_market_details", "get_current_price", "get_orderbook", "get_spread",
                       "get_market_volume", "get_liquidity", "get_price_history",
-                      "analyze_market_opportunity", "compare_markets"]:
+                      "compare_markets"]:
             return await market_analysis.handle_tool(name, arguments)
 
         # Route to portfolio management tools
         elif name in ["get_all_positions", "get_position_details", "get_portfolio_value",
-                      "get_pnl_summary", "get_trade_history", "get_activity_log",
-                      "analyze_portfolio_risk", "suggest_portfolio_actions"]:
+                      "get_pnl_summary", "get_trade_history", "get_activity_log"]:
             return await portfolio_integration.call_portfolio_tool(
                 name,
                 arguments,
@@ -272,8 +271,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 result = await trading_tools.create_market_order(**arguments)
             elif name == "create_batch_orders":
                 result = await trading_tools.create_batch_orders(**arguments)
-            elif name == "suggest_order_price":
-                result = await trading_tools.suggest_order_price(**arguments)
             elif name == "get_order_status":
                 result = await trading_tools.get_order_status(**arguments)
             elif name == "get_open_orders":
@@ -286,8 +283,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
                 result = await trading_tools.cancel_market_orders(**arguments)
             elif name == "cancel_all_orders":
                 result = await trading_tools.cancel_all_orders()
-            elif name == "execute_smart_trade":
-                result = await trading_tools.execute_smart_trade(**arguments)
             elif name == "rebalance_position":
                 result = await trading_tools.rebalance_position(**arguments)
             else:

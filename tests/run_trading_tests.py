@@ -83,24 +83,8 @@ async def main():
         print(f"   Market ID: {market_id}")
         print(f"   Question: {test_market.get('question', 'Unknown')[:60]}...")
 
-        # Test 1: Price suggestion
-        print("\n6. Testing price suggestion...")
-        result = await trading_tools.suggest_order_price(
-            market_id=market_id,
-            side="BUY",
-            size=1.0,
-            strategy="mid"
-        )
-
-        if result.get('success'):
-            print(f"   Suggested price: ${result['suggested_price']:.4f}")
-            print(f"   Market spread: {result['market_context']['spread']:.4f}")
-            print("   SUCCESS")
-        else:
-            print(f"   FAILED: {result.get('error')}")
-
-        # Test 2: Get open orders
-        print("\n7. Testing order management...")
+        # Test 1: Get open orders
+        print("\n6. Testing order management...")
         result = await trading_tools.get_open_orders()
 
         if result.get('success'):
@@ -136,36 +120,15 @@ async def main():
         else:
             print(f"   FAILED: {result.get('error')}")
 
-        # Test 4: Smart trade (dry run)
-        print("\n9. Testing smart trade execution...")
-        result = await trading_tools.execute_smart_trade(
-            market_id=market_id,
-            intent="Buy YES at a good price, be patient",
-            max_budget=2.0
-        )
-
-        if result.get('success'):
-            print(f"   Strategy: {result['strategy']}")
-            print(f"   Orders planned: {result['execution_summary']['total_orders']}")
-            print(f"   Successful: {result['execution_summary']['successful']}")
-
-            # Cleanup any created orders
-            await asyncio.sleep(1)
-            await trading_tools.cancel_all_orders()
-            print("   Cleanup done: SUCCESS")
-        else:
-            print(f"   FAILED: {result.get('error')}")
-
         print("\n" + "="*80)
         print("ALL SMOKE TESTS PASSED!")
         print("="*80 + "\n")
 
         print("Trading Tools Status:")
-        print("  Order Creation Tools: 4/4 implemented")
+        print("  Order Creation Tools: 3/3 implemented")
         print("    - create_limit_order")
         print("    - create_market_order")
         print("    - create_batch_orders")
-        print("    - suggest_order_price")
         print("\n  Order Management Tools: 6/6 implemented")
         print("    - get_order_status")
         print("    - get_open_orders")
@@ -173,10 +136,9 @@ async def main():
         print("    - cancel_order")
         print("    - cancel_market_orders")
         print("    - cancel_all_orders")
-        print("\n  Smart Trading Tools: 2/2 implemented")
-        print("    - execute_smart_trade")
+        print("\n  Rebalance Tool: 1/1 implemented")
         print("    - rebalance_position")
-        print("\n  Total: 12/12 tools operational")
+        print("\n  Total: 10/10 tools operational")
 
     except Exception as e:
         print(f"\nERROR: {e}")

@@ -16,10 +16,6 @@ The portfolio tools are fully implemented in `/src/polymarket_mcp/tools/portfoli
 5. `get_trade_history` - Historical trades with filters
 6. `get_activity_log` - On-chain activity (trades, splits, merges, redeems)
 
-### Analysis Tools (2)
-7. `analyze_portfolio_risk` - Risk assessment and metrics
-8. `suggest_portfolio_actions` - AI-powered optimization suggestions
-
 ## Integration Steps
 
 ### Step 1: Import Portfolio Integration
@@ -90,8 +86,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[types.TextCont
         # Portfolio tools
         portfolio_tool_names = [
             'get_all_positions', 'get_position_details', 'get_portfolio_value',
-            'get_pnl_summary', 'get_trade_history', 'get_activity_log',
-            'analyze_portfolio_risk', 'suggest_portfolio_actions'
+            'get_pnl_summary', 'get_trade_history', 'get_activity_log'
         ]
 
         if name in portfolio_tool_names:
@@ -179,13 +174,6 @@ logger.info("Available tools: 12 Trading, 8 Market Discovery, 10 Market Analysis
 - `end_date` (string ISO, optional)
 - `limit` (number, default: 100)
 
-#### analyze_portfolio_risk
-- No arguments
-
-#### suggest_portfolio_actions
-- `goal` (enum: "balanced"|"aggressive"|"conservative", default: "balanced")
-- `max_actions` (number, default: 5)
-
 ## Rate Limiting
 
 All portfolio tools use `EndpointCategory.DATA_API` (200 requests per 10 seconds).
@@ -219,9 +207,6 @@ From Claude Desktop:
 Get my positions sorted by P&L:
 get_all_positions(sort_by="pnl")
 
-Analyze portfolio risk:
-analyze_portfolio_risk()
-
-Get optimization suggestions:
-suggest_portfolio_actions(goal="balanced", max_actions=5)
+Get trade history:
+get_trade_history(days=30)
 ```
