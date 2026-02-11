@@ -204,10 +204,23 @@ class TradingTools:
             else:
                 reference_price = best_bid if best_bid > 0 else price
 
-            # Round size_in_shares to 2 decimal places
-            # Polymarket API requires: maker_amount max 2 decimals, taker_amount max 4 decimals
-            # For simplicity, we use 2 decimals for shares which satisfies both constraints
-            size_in_shares = round(size / reference_price, 2)
+            # Calculate size_in_shares with proper precision for Polymarket API
+            # API requires: maker_amount max 2 decimals, taker_amount max 4 decimals
+            # For BUY: maker_amount = price * size_in_shares (USDC paid)
+            # For SELL: maker_amount = size_in_shares (shares sold)
+            #
+            # To ensure maker_amount has max 2 decimals for BUY orders:
+            # 1. Calculate raw maker_amount = price * raw_size_in_shares
+            # 2. Round maker_amount to 2 decimals
+            # 3. Back-calculate size_in_shares = maker_amount / price, round to 4 decimals
+            raw_size_in_shares = size / reference_price
+            if side == 'BUY':
+                # Ensure price * size_in_shares has max 2 decimals
+                maker_amount = round(price * raw_size_in_shares, 2)
+                size_in_shares = round(maker_amount / price, 4)
+            else:
+                # For SELL, maker_amount = size_in_shares, so just round to 2 decimals
+                size_in_shares = round(raw_size_in_shares, 2)
 
             # Create order request for validation
             order_request = OrderRequest(
